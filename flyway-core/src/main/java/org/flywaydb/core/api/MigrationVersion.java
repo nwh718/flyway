@@ -236,47 +236,31 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         return versionParts.get(1).toString();
     }
 
+    private int getPredefinedVersionPriority() {
+        if (this == EMPTY) return 0;
+        if (this == CURRENT) return 1;
+        if (this == NEXT) return 2;
+        if (this == LATEST) return 4;
+        return 3;
+    }
+
     @Override
     public int compareTo(MigrationVersion o) {
         if (o == null) {
             return 1;
         }
 
-        if (this == EMPTY) {
-            if (o == EMPTY) {
-                return 0;
-            } else {
-                return -1;
-            }
+        if (this == o) {
+            return 0;
         }
 
-        if (this == CURRENT) {
-            return o == CURRENT ? 0 : -1;
+        int thisPriority = this.getPredefinedVersionPriority();
+        int otherPriority = o.getPredefinedVersionPriority();
+
+        if (thisPriority != 3 || otherPriority != 3) {
+            return Integer.compare(thisPriority, otherPriority);
         }
 
-        if (this == LATEST) {
-            if (o == LATEST) {
-                return 0;
-            } else {
-                return 1;
-            }
-        }
-
-        if (o == EMPTY) {
-            return 1;
-        }
-
-        if (o == CURRENT) {
-            return 1;
-        }
-
-        if (o == NEXT) {
-            return -1;
-        }
-
-        if (o == LATEST) {
-            return -1;
-        }
         final List<BigInteger> parts1 = versionParts;
         final List<BigInteger> parts2 = o.versionParts;
         int largestNumberOfParts = Math.max(parts1.size(), parts2.size());

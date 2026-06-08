@@ -2129,4 +2129,3 @@ public class ClassicConfiguration implements Configuration {
 
         return getModernFlyway().getJarDirs();
     }
-}

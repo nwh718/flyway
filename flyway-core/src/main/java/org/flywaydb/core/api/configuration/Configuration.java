@@ -658,4 +658,3 @@ public interface Configuration {
     ProgressLogger createProgress(String operationName);
 
     ResolvedEnvironment getResolvedEnvironment(String envName, ProvisionerMode provisionerMode, ProgressLogger progress);
-}

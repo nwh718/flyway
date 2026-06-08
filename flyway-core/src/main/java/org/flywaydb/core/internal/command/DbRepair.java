@@ -87,28 +87,20 @@ public class DbRepair {
     private final Configuration configuration;
 
     /**
-     * Creates a new DbRepair.
-     *
-     * @param database The database-specific support.
-     * @param migrationResolver The migration resolver.
-     * @param schemaHistory The schema history table.
      * @param callbackExecutor The callback executor.
      */
     public DbRepair(Database database, CompositeMigrationResolver migrationResolver, SchemaHistory schemaHistory,
                     CallbackExecutor callbackExecutor, Configuration configuration) {
         this.database = database;
         this.connection = database.getMainConnection();
-        this.schemaHistory = schemaHistory;
-        this.callbackExecutor = callbackExecutor;
         this.configuration = configuration;
 
-        this.migrationInfoService = new MigrationInfoServiceImpl(migrationResolver, schemaHistory, database, configuration,
+                    CallbackExecutor callbackExecutor, Configuration configuration) {
                                                                  MigrationVersion.LATEST, true, ValidatePatternUtils.getIgnoreAllPattern());
 
         this.repairResult = CommandResultFactory.createRepairResult(database.getCatalog());
     }
 
-    /**
      * Repairs the schema history table.
      */
     public RepairResult repair() {

@@ -1002,4 +1002,3 @@ public class FluentConfiguration implements Configuration {
         config.setDriver(driver);
         return this;
     }
-}

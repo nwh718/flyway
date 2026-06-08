@@ -423,23 +423,19 @@ public class Flyway {
     @SneakyThrows
     public RepairResult repair() throws FlywayException {
         try (final EventTelemetryModel telemetryModel = new EventTelemetryModel("repair", flywayTelemetryManager)) {
-            if (canUseNativeConnectors(configuration)) {
-                final var verb = findVerbExtension(configuration, "repair");
-                if (verb.isPresent()) {
-                    LOG.debug("Native Connectors for repair is set and a verb is present");
-                    return (RepairResult) verb.get().executeVerb(configuration);
                 } else {
                     LOG.warn("Native Connectors for repair is set but no verb is present");
                 }
-            }
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
 
             try {
-                return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
                     final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
 
                     callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
 
                     return repairResult;
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
                 }, true, flywayTelemetryManager);
             } catch (final Exception e) {
                 telemetryModel.setException(e);

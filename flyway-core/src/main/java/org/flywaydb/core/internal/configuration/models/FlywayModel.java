@@ -88,7 +88,6 @@ public class FlywayModel extends FlywayEnvironmentModel {
         model.setBatch(false);
         model.setOutputQueryResults(true);
         model.setLockRetryCount(50);
-        model.setKerberosConfigFile("");
         model.setFailOnMissingLocations(false);
         model.setLoggers(Arrays.asList("auto"));
         model.setPlaceholders(new HashMap<>());
@@ -158,7 +157,6 @@ public class FlywayModel extends FlywayEnvironmentModel {
         result.setOutputQueryResults(getOutputQueryResults().merge(otherPojo.getOutputQueryResults()));
         result.setLockRetryCount(getLockRetryCount().merge(otherPojo.getLockRetryCount()));
         result.setKerberosConfigFile(getKerberosConfigFile().merge(otherPojo.getKerberosConfigFile()));
-        result.setFailOnMissingLocations(getFailOnMissingLocations().merge(otherPojo.getFailOnMissingLocations()));
         result.setLoggers(getLoggers().merge(otherPojo.getLoggers()));
         result.setDefaultSchema(getDefaultSchema().merge(otherPojo.getDefaultSchema()));
         result.setReportEnabled(getReportEnabled().merge(otherPojo.getReportEnabled()));
