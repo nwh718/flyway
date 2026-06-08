@@ -1,0 +1,44 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/Flyway.java b/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
+index 879fc1ce8..7400daac7 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
+@@ -204,27 +204,20 @@ public class Flyway {
+                             }
+                         }
+ 
+-                        if (nonEmptySchemas.isEmpty() && configuration.isBaselineOnMigrate()) {
+-                            LOG.info("All configured schemas are empty; a baseline marker will not be added to Flyway's schema history table. "
+-                                + "A baseline or migration script with a lower version than the baseline version may execute if available. Check the Schemas parameter if this is not intended. See " + FlywayDbWebsiteLinks.getRedirectLinkFromTopic(
+-                                Topic.BASELINE_ON_MIGRATE) + " for more info");
+-                        }
+-
+-                        if (!nonEmptySchemas.isEmpty() && !configuration.isSkipExecutingMigrations()) {
+-                            if (configuration.isBaselineOnMigrate()) {
+-                                doBaseline(schemaHistory, callbackExecutor, database);
+-                            } else {
+-                                // Second check for MySQL which is sometimes flaky otherwise
+-                                if (!schemaHistory.exists()) {
+-                                    throw new FlywayException("Found non-empty schema(s) "
+-                                                                      + StringUtils.collectionToCommaDelimitedString(nonEmptySchemas)
+-                                                                      + " but no schema history table. Use baseline()"
+-                                                                      + " or set baselineOnMigrate to true to initialize the schema history table.", CoreErrorCode.NON_EMPTY_SCHEMA_WITHOUT_SCHEMA_HISTORY_TABLE);
+-                                }
++                        if (configuration.isBaselineOnMigrate() && !configuration.isSkipExecutingMigrations()) {
++                            doBaseline(schemaHistory, callbackExecutor, database);
++                        } else if (!nonEmptySchemas.isEmpty()) {
++                            // Second check for MySQL which is sometimes flaky otherwise
++                            if (!schemaHistory.exists()) {
++                                throw new FlywayException("Found non-empty schema(s) "
++                                                                  + StringUtils.collectionToCommaDelimitedString(nonEmptySchemas)
++                                                                  + " but no schema history table. Use baseline()"
++                                                                  + " or set baselineOnMigrate to true to initialize the schema history table.", CoreErrorCode.NON_EMPTY_SCHEMA_WITHOUT_SCHEMA_HISTORY_TABLE);
+                             }
++                        } else {
++                            // No baseline and no non-empty schemas, just create the schema history table
++                            schemaHistory.create(false);
+                         }
+-
+-                        schemaHistory.create(false);
+                     }
+ 
+                     final MigrateResult result = new DbMigrate(database, schemaHistory, defaultSchema, migrationResolver, configuration, callbackExecutor).migrate();
