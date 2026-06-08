@@ -205,15 +205,13 @@ public class Flyway {
                         }
 
                         if (nonEmptySchemas.isEmpty() && configuration.isBaselineOnMigrate()) {
-                            LOG.info("All configured schemas are empty; a baseline marker will not be added to Flyway's schema history table. "
-                                + "A baseline or migration script with a lower version than the baseline version may execute if available. Check the Schemas parameter if this is not intended. See " + FlywayDbWebsiteLinks.getRedirectLinkFromTopic(
-                                Topic.BASELINE_ON_MIGRATE) + " for more info");
+                            LOG.info("All configured schemas are empty, but baselineOnMigrate is true. A baseline marker will be added to prevent lower version scripts from executing.");
                         }
 
-                        if (!nonEmptySchemas.isEmpty() && !configuration.isSkipExecutingMigrations()) {
+                        if (!configuration.isSkipExecutingMigrations()) {
                             if (configuration.isBaselineOnMigrate()) {
                                 doBaseline(schemaHistory, callbackExecutor, database);
-                            } else {
+                            } else if (!nonEmptySchemas.isEmpty()) {
                                 // Second check for MySQL which is sometimes flaky otherwise
                                 if (!schemaHistory.exists()) {
                                     throw new FlywayException("Found non-empty schema(s) "
