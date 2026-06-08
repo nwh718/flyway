@@ -95,6 +95,7 @@ public class FlywayModel extends FlywayEnvironmentModel {
         model.setProvisionMode("provision");
         model.setReportEnabled(false);
         model.setColor("auto");
+        model.setRepairChunkSize(1000);
         return model;
     }
 

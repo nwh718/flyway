@@ -1,0 +1,148 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/Flyway.java b/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
+index 879fc1ce8..745e20e54 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
+@@ -435,7 +435,15 @@ public class Flyway {
+ 
+             try {
+                 return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
+-                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
++                    // 校验 repairChunkSize 配置
++                    int repairChunkSize = configuration.getRepairChunkSize();
++                    int chunkSizeToUse = repairChunkSize;
++                    if (repairChunkSize < 100 || repairChunkSize > 10000) {
++                        LOG.warn("Invalid repairChunkSize: " + repairChunkSize + ". Value must be between 100 and 10000. Using default value: 1000");
++                        chunkSizeToUse = 1000;
++                    }
++                    
++                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, chunkSizeToUse).repair();
+ 
+                     callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
+ 
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/configuration/ClassicConfiguration.java b/flyway-core/src/main/java/org/flywaydb/core/api/configuration/ClassicConfiguration.java
+index cfd7afdca..13a1b52de 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/configuration/ClassicConfiguration.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/configuration/ClassicConfiguration.java
+@@ -883,6 +883,17 @@ public class ClassicConfiguration implements Configuration {
+         getModernFlyway().setLockRetryCount(lockRetryCount);
+     }
+ 
++    @Override
++    public int getRepairChunkSize() {
++        return getEnvironmentOverrides().getRepairChunkSize() != null
++            ? getEnvironmentOverrides().getRepairChunkSize()
++            : getModernFlyway().getRepairChunkSize();
++    }
++
++    public void setRepairChunkSize(final Integer repairChunkSize) {
++        getModernFlyway().setRepairChunkSize(repairChunkSize);
++    }
++
+     @Override
+     public Map<String, String> getJdbcProperties() {
+         return getCurrentResolvedEnvironment().getJdbcProperties();
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java b/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java
+index 9d37aff4f..f53d12a8d 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java
+@@ -658,4 +658,11 @@ public interface Configuration {
+     ProgressLogger createProgress(String operationName);
+ 
+     ResolvedEnvironment getResolvedEnvironment(String envName, ProvisionerMode provisionerMode, ProgressLogger progress);
++
++    /**
++     * The chunk size for repair operation.
++     *
++     * @return The chunk size for repair.
++     */
++    int getRepairChunkSize();
+ }
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java
+index a73b6b8a1..f3f52a218 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java
+@@ -86,6 +86,11 @@ public class DbRepair {
+      */
+     private final Configuration configuration;
+ 
++    /**
++     * The chunk size for repair.
++     */
++    private final int chunkSize;
++
+     /**
+      * Creates a new DbRepair.
+      *
+@@ -93,20 +98,39 @@ public class DbRepair {
+      * @param migrationResolver The migration resolver.
+      * @param schemaHistory The schema history table.
+      * @param callbackExecutor The callback executor.
++     * @param configuration The Flyway configuration.
++     * @param chunkSize The chunk size for repair.
+      */
+     public DbRepair(Database database, CompositeMigrationResolver migrationResolver, SchemaHistory schemaHistory,
+-                    CallbackExecutor callbackExecutor, Configuration configuration) {
++                    CallbackExecutor callbackExecutor, Configuration configuration, int chunkSize) {
+         this.database = database;
+         this.connection = database.getMainConnection();
+         this.schemaHistory = schemaHistory;
+         this.callbackExecutor = callbackExecutor;
+         this.configuration = configuration;
++        this.chunkSize = chunkSize;
+ 
+         this.migrationInfoService = new MigrationInfoServiceImpl(migrationResolver, schemaHistory, database, configuration,
+                                                                  MigrationVersion.LATEST, true, ValidatePatternUtils.getIgnoreAllPattern());
+ 
+         this.repairResult = CommandResultFactory.createRepairResult(database.getCatalog());
+     }
++    
++    /**
++     * Creates a new DbRepair.
++     *
++     * @param database The database-specific support.
++     * @param migrationResolver The migration resolver.
++     * @param schemaHistory The schema history table.
++     * @param callbackExecutor The callback executor.
++     * @param configuration The Flyway configuration.
++     * @deprecated Use the constructor with chunkSize instead.
++     */
++    @Deprecated
++    public DbRepair(Database database, CompositeMigrationResolver migrationResolver, SchemaHistory schemaHistory,
++                    CallbackExecutor callbackExecutor, Configuration configuration) {
++        this(database, migrationResolver, schemaHistory, callbackExecutor, configuration, 1000);
++    }
+ 
+     /**
+      * Repairs the schema history table.
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayEnvironmentModel.java b/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayEnvironmentModel.java
+index ce6a782f3..ae289bd58 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayEnvironmentModel.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayEnvironmentModel.java
+@@ -93,6 +93,7 @@ public class FlywayEnvironmentModel {
+     private String defaultSchema;
+     private Map<String, PropertyResolver> propertyResolvers;
+     private Boolean reportEnabled;
++    private Integer repairChunkSize;
+ 
+     @JsonAnySetter
+     @Getter(onMethod = @__(@ClassUtils.DoNotMapForLogging))
+@@ -152,6 +153,7 @@ public class FlywayEnvironmentModel {
+         result.defaultSchema = defaultSchema.merge(otherPojo.defaultSchema);
+         result.placeholders = MergeUtils.merge(placeholders, otherPojo.placeholders, (a,b) -> b != null ? b : a);
+         result.reportEnabled = reportEnabled.merge(otherPojo.reportEnabled);
++        result.repairChunkSize = repairChunkSize.merge(otherPojo.repairChunkSize);
+         result.propertyResolvers = MergeUtils.merge(propertyResolvers, otherPojo.propertyResolvers, (a,b) -> b != null ? b : a); // TODO: more granular merge
+         result.pluginConfigurations = MergeUtils.merge(pluginConfigurations, otherPojo.pluginConfigurations, MergeUtils::mergeObjects);
+         return result;
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayModel.java b/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayModel.java
+index 2803003d8..4592d4294 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayModel.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/configuration/models/FlywayModel.java
+@@ -95,6 +95,7 @@ public class FlywayModel extends FlywayEnvironmentModel {
+         model.setProvisionMode("provision");
+         model.setReportEnabled(false);
+         model.setColor("auto");
++        model.setRepairChunkSize(1000);
+         return model;
+     }
+ 

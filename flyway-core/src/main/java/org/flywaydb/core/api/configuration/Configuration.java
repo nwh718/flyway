@@ -658,4 +658,11 @@ public interface Configuration {
     ProgressLogger createProgress(String operationName);
 
     ResolvedEnvironment getResolvedEnvironment(String envName, ProvisionerMode provisionerMode, ProgressLogger progress);
+
+    /**
+     * The chunk size for repair operation.
+     *
+     * @return The chunk size for repair.
+     */
+    int getRepairChunkSize();
 }

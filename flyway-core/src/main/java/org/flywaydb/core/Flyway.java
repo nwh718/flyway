@@ -435,7 +435,15 @@ public class Flyway {
 
             try {
                 return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
-                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
+                    // 校验 repairChunkSize 配置
+                    int repairChunkSize = configuration.getRepairChunkSize();
+                    int chunkSizeToUse = repairChunkSize;
+                    if (repairChunkSize < 100 || repairChunkSize > 10000) {
+                        LOG.warn("Invalid repairChunkSize: " + repairChunkSize + ". Value must be between 100 and 10000. Using default value: 1000");
+                        chunkSizeToUse = 1000;
+                    }
+                    
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, chunkSizeToUse).repair();
 
                     callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
 

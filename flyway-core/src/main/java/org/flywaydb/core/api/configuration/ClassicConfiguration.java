@@ -884,6 +884,17 @@ public class ClassicConfiguration implements Configuration {
     }
 
     @Override
+    public int getRepairChunkSize() {
+        return getEnvironmentOverrides().getRepairChunkSize() != null
+            ? getEnvironmentOverrides().getRepairChunkSize()
+            : getModernFlyway().getRepairChunkSize();
+    }
+
+    public void setRepairChunkSize(final Integer repairChunkSize) {
+        getModernFlyway().setRepairChunkSize(repairChunkSize);
+    }
+
+    @Override
     public Map<String, String> getJdbcProperties() {
         return getCurrentResolvedEnvironment().getJdbcProperties();
     }
