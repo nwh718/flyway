@@ -1,0 +1,69 @@
+diff --git a/flyway-commandline/pom.xml b/flyway-commandline/pom.xml
+--- a/flyway-commandline/pom.xml
++++ b/flyway-commandline/pom.xml
+@@ -130,4 +130,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-ignite</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -136,4 +136,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-tidb</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -142,4 +142,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-yugabytedb</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -148,4 +148,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-clickhouse</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -154,4 +154,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-oceanbase</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -166,4 +166,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-db2zos</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -172,4 +172,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-duckdb</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -178,4 +178,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-timeplus</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -184,4 +184,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-cubrid</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -190,4 +190,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-questdb</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
+@@ -196,4 +196,4 @@
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-database-iris</artifactId>
+-      <version>10.24.0</version>
++      <version>${project.version}</version>
+       <scope>runtime</scope>
