@@ -43,8 +43,6 @@ public interface Configuration {
      */
     ConfigurationModel getModernConfig();
 
-    /**
-     * Retrieves the ClassLoader to use for loading migrations, resolvers, etc. from the classpath.
      *
      * @return The ClassLoader to use for loading migrations, resolvers, etc. from the classpath. (default: Thread.currentThread().getContextClassLoader() )
      */
