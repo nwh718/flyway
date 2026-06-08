@@ -43,6 +43,8 @@ public interface Configuration {
      */
     ConfigurationModel getModernConfig();
 
+    default int getRepairChunkSize() { return 1000; }
+
     /**
      * Retrieves the ClassLoader to use for loading migrations, resolvers, etc. from the classpath.
      *

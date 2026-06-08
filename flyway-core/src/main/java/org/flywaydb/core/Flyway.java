@@ -423,19 +423,16 @@ public class Flyway {
     @SneakyThrows
     public RepairResult repair() throws FlywayException {
         try (final EventTelemetryModel telemetryModel = new EventTelemetryModel("repair", flywayTelemetryManager)) {
-            if (canUseNativeConnectors(configuration)) {
-                final var verb = findVerbExtension(configuration, "repair");
-                if (verb.isPresent()) {
-                    LOG.debug("Native Connectors for repair is set and a verb is present");
-                    return (RepairResult) verb.get().executeVerb(configuration);
-                } else {
-                    LOG.warn("Native Connectors for repair is set but no verb is present");
-                }
+            int repairChunkSize = configuration.getRepairChunkSize();
+            if (repairChunkSize < 100 || repairChunkSize > 10000) {
+                LOG.warn("Repair chunk size must be between 100 and 10000. Defaulting to 1000.");
+                repairChunkSize = 1000;
             }
+            final int finalRepairChunkSize = repairChunkSize;
 
             try {
                 return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
-                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, finalRepairChunkSize).repair();
 
                     callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
 
@@ -449,9 +446,6 @@ public class Flyway {
     }
 
     /**
-     * Undoes the most recently applied versioned migration. If target is specified, Flyway will attempt to undo
-     * versioned migrations in the order they were applied until it hits one with a version below the target. If there
-     * is no versioned migration to undo, calling undo has no effect.
      * <i>Flyway Teams only</i>
      * <img src="https://flyway.github.io/flyway/assets/command-undo.png" alt="undo">
      *

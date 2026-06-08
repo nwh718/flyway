@@ -1,0 +1,126 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/Flyway.java b/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
+index 879fc1ce8..7ac84ec4f 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/Flyway.java
+@@ -423,19 +423,16 @@ public class Flyway {
+     @SneakyThrows
+     public RepairResult repair() throws FlywayException {
+         try (final EventTelemetryModel telemetryModel = new EventTelemetryModel("repair", flywayTelemetryManager)) {
+-            if (canUseNativeConnectors(configuration)) {
+-                final var verb = findVerbExtension(configuration, "repair");
+-                if (verb.isPresent()) {
+-                    LOG.debug("Native Connectors for repair is set and a verb is present");
+-                    return (RepairResult) verb.get().executeVerb(configuration);
+-                } else {
+-                    LOG.warn("Native Connectors for repair is set but no verb is present");
+-                }
++            int repairChunkSize = configuration.getRepairChunkSize();
++            if (repairChunkSize < 100 || repairChunkSize > 10000) {
++                LOG.warn("Repair chunk size must be between 100 and 10000. Defaulting to 1000.");
++                repairChunkSize = 1000;
+             }
++            final int finalRepairChunkSize = repairChunkSize;
+ 
+             try {
+                 return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
+-                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
++                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, finalRepairChunkSize).repair();
+ 
+                     callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
+ 
+@@ -449,9 +446,6 @@ public class Flyway {
+     }
+ 
+     /**
+-     * Undoes the most recently applied versioned migration. If target is specified, Flyway will attempt to undo
+-     * versioned migrations in the order they were applied until it hits one with a version below the target. If there
+-     * is no versioned migration to undo, calling undo has no effect.
+      * <i>Flyway Teams only</i>
+      * <img src="https://flyway.github.io/flyway/assets/command-undo.png" alt="undo">
+      *
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java b/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java
+index 9d37aff4f..a5456ed42 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/configuration/Configuration.java
+@@ -43,6 +43,8 @@ public interface Configuration {
+      */
+     ConfigurationModel getModernConfig();
+ 
++    default int getRepairChunkSize() { return 1000; }
++
+     /**
+      * Retrieves the ClassLoader to use for loading migrations, resolvers, etc. from the classpath.
+      *
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java
+index a73b6b8a1..28bee533b 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbRepair.java
+@@ -87,43 +87,33 @@ public class DbRepair {
+     private final Configuration configuration;
+ 
+     /**
+-     * Creates a new DbRepair.
+-     *
++     * The repair chunk size.
++     */
++    private final int chunkSize;
++
++    /**
+      * @param database The database-specific support.
+      * @param migrationResolver The migration resolver.
+      * @param schemaHistory The schema history table.
+      * @param callbackExecutor The callback executor.
++     * @param configuration The Flyway configuration.
++     * @param chunkSize The repair chunk size.
+      */
+     public DbRepair(Database database, CompositeMigrationResolver migrationResolver, SchemaHistory schemaHistory,
+-                    CallbackExecutor callbackExecutor, Configuration configuration) {
++                    CallbackExecutor callbackExecutor, Configuration configuration, int chunkSize) {
+         this.database = database;
+         this.connection = database.getMainConnection();
+         this.schemaHistory = schemaHistory;
+         this.callbackExecutor = callbackExecutor;
+         this.configuration = configuration;
+-
++        this.chunkSize = chunkSize;
+         this.migrationInfoService = new MigrationInfoServiceImpl(migrationResolver, schemaHistory, database, configuration,
+                                                                  MigrationVersion.LATEST, true, ValidatePatternUtils.getIgnoreAllPattern());
+-
+-        this.repairResult = CommandResultFactory.createRepairResult(database.getCatalog());
+     }
+ 
+     /**
+      * Repairs the schema history table.
+      */
+-    public RepairResult repair() {
+-        callbackExecutor.onEvent(Event.BEFORE_REPAIR);
+-
+-        CompletedRepairActions repairActions;
+-        try {
+-            StopWatch stopWatch = new StopWatch();
+-            stopWatch.start();
+-
+-            repairActions = ExecutionTemplateFactory.createExecutionTemplate(connection.getJdbcConnection(), database).execute(new Callable<CompletedRepairActions>() {
+-                public CompletedRepairActions call() {
+-                    CompletedRepairActions completedActions = new CompletedRepairActions();
+-
+-                    completedActions.removedFailedMigrations = schemaHistory.removeFailedMigrations(repairResult, configuration.getCherryPick());
+                     migrationInfoService.refresh();
+ 
+                     completedActions.deletedMissingMigrations = deleteMissingMigrations();
+@@ -181,6 +171,7 @@ public class DbRepair {
+ 
+     private boolean alignAppliedMigrationsWithResolvedMigrations() {
+         boolean repaired = false;
++            // Repair versioned
+         for (MigrationInfo migrationInfo : migrationInfoService.all()) {
+             MigrationInfoImpl migrationInfoImpl = (MigrationInfoImpl) migrationInfo;
+ 
+@@ -193,6 +184,7 @@ public class DbRepair {
+                     && applied != null
+                     && !applied.getType().isSynthetic()
+                     && migrationInfoImpl.getState() != MigrationState.UNDONE
++            // Repair repeatable
+                     && migrationInfoImpl.getState() != MigrationState.IGNORED
+                     && updateNeeded(resolved, applied)) {
+                 schemaHistory.update(applied, resolved);
