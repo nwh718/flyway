@@ -95,7 +95,6 @@ public class FlywayModel extends FlywayEnvironmentModel {
         model.setProvisionMode("provision");
         model.setReportEnabled(false);
         model.setColor("auto");
-        return model;
     }
 
     @SuppressWarnings("unused") // Backwards compatibility for old property name

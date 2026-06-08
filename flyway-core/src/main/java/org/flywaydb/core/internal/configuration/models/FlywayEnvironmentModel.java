@@ -93,7 +93,6 @@ public class FlywayEnvironmentModel {
     private String defaultSchema;
     private Map<String, PropertyResolver> propertyResolvers;
     private Boolean reportEnabled;
-
     @JsonAnySetter
     @Getter(onMethod = @__(@ClassUtils.DoNotMapForLogging))
     private Map<String, Object> pluginConfigurations = new HashMap<>();
@@ -153,7 +152,6 @@ public class FlywayEnvironmentModel {
         result.placeholders = MergeUtils.merge(placeholders, otherPojo.placeholders, (a,b) -> b != null ? b : a);
         result.reportEnabled = reportEnabled.merge(otherPojo.reportEnabled);
         result.propertyResolvers = MergeUtils.merge(propertyResolvers, otherPojo.propertyResolvers, (a,b) -> b != null ? b : a); // TODO: more granular merge
-        result.pluginConfigurations = MergeUtils.merge(pluginConfigurations, otherPojo.pluginConfigurations, MergeUtils::mergeObjects);
         return result;
     }
 

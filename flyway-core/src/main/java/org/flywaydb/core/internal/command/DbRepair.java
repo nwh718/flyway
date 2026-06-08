@@ -86,22 +86,19 @@ public class DbRepair {
      */
     private final Configuration configuration;
 
+    private final int chunkSize;
+
     /**
-     * Creates a new DbRepair.
-     *
-     * @param database The database-specific support.
-     * @param migrationResolver The migration resolver.
-     * @param schemaHistory The schema history table.
      * @param callbackExecutor The callback executor.
      */
     public DbRepair(Database database, CompositeMigrationResolver migrationResolver, SchemaHistory schemaHistory,
-                    CallbackExecutor callbackExecutor, Configuration configuration) {
+                    CallbackExecutor callbackExecutor, Configuration configuration, int chunkSize) {
         this.database = database;
         this.connection = database.getMainConnection();
         this.schemaHistory = schemaHistory;
         this.callbackExecutor = callbackExecutor;
         this.configuration = configuration;
-
+        this.chunkSize = chunkSize;
         this.migrationInfoService = new MigrationInfoServiceImpl(migrationResolver, schemaHistory, database, configuration,
                                                                  MigrationVersion.LATEST, true, ValidatePatternUtils.getIgnoreAllPattern());
 
@@ -122,12 +119,9 @@ public class DbRepair {
             repairActions = ExecutionTemplateFactory.createExecutionTemplate(connection.getJdbcConnection(), database).execute(new Callable<CompletedRepairActions>() {
                 public CompletedRepairActions call() {
                     CompletedRepairActions completedActions = new CompletedRepairActions();
-
                     completedActions.removedFailedMigrations = schemaHistory.removeFailedMigrations(repairResult, configuration.getCherryPick());
                     migrationInfoService.refresh();
-
                     completedActions.deletedMissingMigrations = deleteMissingMigrations();
-
                     completedActions.alignedAppliedMigrationChecksums = alignAppliedMigrationsWithResolvedMigrations();
                     return completedActions;
                 }
@@ -187,7 +181,6 @@ public class DbRepair {
             ResolvedMigration resolved = migrationInfoImpl.getResolvedMigration();
             AppliedMigration applied = migrationInfoImpl.getAppliedMigration();
 
-            // Repair versioned
             if (resolved != null
                     && resolved.getVersion() != null
                     && applied != null
@@ -200,7 +193,6 @@ public class DbRepair {
                 repairResult.migrationsAligned.add(CommandResultFactory.createRepairOutput(migrationInfo));
             }
 
-            // Repair repeatable
             if (resolved != null
                     && resolved.getVersion() == null
                     && applied != null

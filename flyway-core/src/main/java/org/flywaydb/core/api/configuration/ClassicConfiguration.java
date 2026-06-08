@@ -884,17 +884,6 @@ public class ClassicConfiguration implements Configuration {
     }
 
     @Override
-    public Map<String, String> getJdbcProperties() {
-        return getCurrentResolvedEnvironment().getJdbcProperties();
-    }
-
-    /**
-     * Properties to pass to the JDBC driver object.
-     */
-    public void setJdbcProperties(final Map<String, String> jdbcProperties) {
-        getCurrentUnresolvedEnvironment().setJdbcProperties(jdbcProperties);
-        requestResolvedEnvironmentRefresh(getCurrentEnvironmentName());
-    }
 
     @Override
     public boolean isFailOnMissingLocations() {

@@ -423,6 +423,15 @@ public class Flyway {
     @SneakyThrows
     public RepairResult repair() throws FlywayException {
         try (final EventTelemetryModel telemetryModel = new EventTelemetryModel("repair", flywayTelemetryManager)) {
+            final int configuredRepairChunkSize = configuration.getRepairChunkSize();
+            final int repairChunkSize;
+            if (configuredRepairChunkSize < 100 || configuredRepairChunkSize > 10000) {
+                LOG.warn("Repair chunk size " + configuredRepairChunkSize + " is out of range. Using default value 1000.");
+                repairChunkSize = 1000;
+            } else {
+                repairChunkSize = configuredRepairChunkSize;
+            }
+
             if (canUseNativeConnectors(configuration)) {
                 final var verb = findVerbExtension(configuration, "repair");
                 if (verb.isPresent()) {
@@ -435,12 +444,11 @@ public class Flyway {
 
             try {
                 return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
-                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
-
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, repairChunkSize).repair();
                     callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
 
                     return repairResult;
-                }, true, flywayTelemetryManager);
+                }, false, flywayTelemetryManager);
             } catch (final Exception e) {
                 telemetryModel.setException(e);
                 throw e;
