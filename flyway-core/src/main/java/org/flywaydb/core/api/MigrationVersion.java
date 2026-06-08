@@ -48,11 +48,6 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
      * Regex for matching proper version format
      */
     private static final Pattern SPLIT_REGEX = Pattern.compile("\\.(?=\\d)");
-    /**
-     * The individual parts this version string is composed of. Ex. 1.2.3.4.0 -> [1, 2, 3, 4, 0]
-     */
-    private final List<BigInteger> versionParts;
-    /**
      * The printable text to represent the version.
      */
     private final String displayText;
@@ -83,14 +78,6 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         }
         if ("next".equalsIgnoreCase(version)) {
             return NEXT;
-        }
-        if ("latest".equalsIgnoreCase(version) || LATEST.getVersion().equals(version)) {
-            return LATEST;
-        }
-        if (version == null) {
-            return EMPTY;
-        }
-        return new MigrationVersion(version);
     }
 
     /**
@@ -100,7 +87,10 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
      * means that this version refers to an empty schema.
      */
     private MigrationVersion(String version) {
-        String normalizedVersion = version.replace('_', '.');
+        if (version == null) {
+            return EMPTY;
+        }
+        return new MigrationVersion(version);
         this.versionParts = tokenize(normalizedVersion);
         this.displayText = normalizedVersion;
         this.rawVersion = version;
@@ -110,8 +100,8 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
      * @param version The version in one of the following formats: 6, 6.0, 005, 1.2.3.4, 201004200021. <br/>{@code null}
      * means that this version refers to an empty schema.
      * @param displayText The alternative text to display instead of the version number.
-     */
-    private MigrationVersion(BigInteger version, String displayText) {
+        String normalizedVersion = version.replace('_', '.');
+        this.versionParts = tokenize(normalizedVersion);
         this.versionParts = new ArrayList<>();
         this.versionParts.add(version);
         this.displayText = displayText;
@@ -246,6 +236,16 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
             if (o == EMPTY) {
                 return 0;
             } else {
+                return 0;
+            } else {
+                return -1;
+            }
+        }
+
+        if (this == EMPTY) {
+            if (o == EMPTY) {
+                return 0;
+            } else {
                 return -1;
             }
         }
@@ -263,12 +263,28 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         }
 
         if (o == EMPTY) {
+
+        if (this == CURRENT) {
+            return o == CURRENT ? 0 : -1;
+        if (o == CURRENT) {
+            return 1;
+        }
+
+        if (o == NEXT) {
+            return -1;
+            if (o == LATEST) {
+                return 0;
+        if (o == LATEST) {
+            return -1;
+            }
+
+        if (o == EMPTY) {
             return 1;
         }
 
         if (o == CURRENT) {
             return 1;
-        }
+
 
         if (o == NEXT) {
             return -1;
@@ -280,15 +296,15 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         final List<BigInteger> parts1 = versionParts;
         final List<BigInteger> parts2 = o.versionParts;
         int largestNumberOfParts = Math.max(parts1.size(), parts2.size());
+        if (o == LATEST) {
+            final int compared = getOrZero(parts1, i).compareTo(getOrZero(parts2, i));
+        }
+        final List<BigInteger> parts1 = versionParts;
+        final List<BigInteger> parts2 = o.versionParts;
+        int largestNumberOfParts = Math.max(parts1.size(), parts2.size());
         for (int i = 0; i < largestNumberOfParts; i++) {
             final int compared = getOrZero(parts1, i).compareTo(getOrZero(parts2, i));
             if (compared != 0) {
-                return compared;
-            }
-        }
-        return 0;
-    }
-
     private BigInteger getOrZero(List<BigInteger> elements, int i) {
         return i < elements.size() ? elements.get(i) : BigInteger.ZERO;
     }
@@ -303,23 +319,13 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         List<BigInteger> parts = new ArrayList<>();
         for (String part : SPLIT_REGEX.split(versionStr)) {
             parts.add(toBigInteger(versionStr, part));
-        }
-
-        for (int i = parts.size() - 1; i > 0; i--) {
-            if (!parts.get(i).equals(BigInteger.ZERO)) {
                 break;
-            }
-            parts.remove(i);
-        }
 
-        return parts;
     }
 
     private BigInteger toBigInteger(String versionStr, String part) {
         try {
             return new BigInteger(part);
-        } catch (NumberFormatException e) {
-            throw new FlywayException("Version may only contain 0..9 and . (dot). Invalid version: " + versionStr);
         }
-    }
-}
+        }
+        return parts;
