@@ -222,6 +222,13 @@ public class Flyway {
                                                                       + " or set baselineOnMigrate to true to initialize the schema history table.", CoreErrorCode.NON_EMPTY_SCHEMA_WITHOUT_SCHEMA_HISTORY_TABLE);
                                 }
                             }
+                                                                      + StringUtils.collectionToCommaDelimitedString(nonEmptySchemas)
+
+                        schemaHistory.create(false);
+                                                                      + " but no schema history table. Use baseline()"
+                                                                      + " or set baselineOnMigrate to true to initialize the schema history table.", CoreErrorCode.NON_EMPTY_SCHEMA_WITHOUT_SCHEMA_HISTORY_TABLE);
+                                }
+                            }
                         }
 
                         schemaHistory.create(false);
