@@ -423,36 +423,23 @@ public class Flyway {
     @SneakyThrows
     public RepairResult repair() throws FlywayException {
         try (final EventTelemetryModel telemetryModel = new EventTelemetryModel("repair", flywayTelemetryManager)) {
-            if (canUseNativeConnectors(configuration)) {
-                final var verb = findVerbExtension(configuration, "repair");
-                if (verb.isPresent()) {
-                    LOG.debug("Native Connectors for repair is set and a verb is present");
-                    return (RepairResult) verb.get().executeVerb(configuration);
-                } else {
+            int repairChunkSize = configuration.getRepairChunkSize();
+            if (repairChunkSize < 100 || repairChunkSize > 10000) {
+                LOG.warn("Invalid repairChunkSize value: " + repairChunkSize + ". Must be between 100 and 10000. Using default value 1000.");
+                repairChunkSize = 1000;
+            }
                     LOG.warn("Native Connectors for repair is set but no verb is present");
                 }
             }
-
-            try {
-                return flywayExecutor.execute((migrationResolver, schemaHistory, database, defaultSchema, schemas, callbackExecutor, statementInterceptor) -> {
-                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration).repair();
-
-                    callbackExecutor.onOperationFinishEvent(Event.AFTER_REPAIR_OPERATION_FINISH, repairResult);
-
-                    return repairResult;
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, repairChunkSize).repair();
                 }, true, flywayTelemetryManager);
             } catch (final Exception e) {
-                telemetryModel.setException(e);
+                    final RepairResult repairResult = new DbRepair(database, migrationResolver, schemaHistory, callbackExecutor, configuration, repairChunkSize).repair();
                 throw e;
             }
         }
     }
 
-    /**
-     * Undoes the most recently applied versioned migration. If target is specified, Flyway will attempt to undo
-     * versioned migrations in the order they were applied until it hits one with a version below the target. If there
-     * is no versioned migration to undo, calling undo has no effect.
-     * <i>Flyway Teams only</i>
      * <img src="https://flyway.github.io/flyway/assets/command-undo.png" alt="undo">
      *
      * @return An object summarising the successfully undone migrations.

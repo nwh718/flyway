@@ -658,4 +658,12 @@ public interface Configuration {
     ProgressLogger createProgress(String operationName);
 
     ResolvedEnvironment getResolvedEnvironment(String envName, ProvisionerMode provisionerMode, ProgressLogger progress);
+
+    /**
+     * Retrieves the chunk size to use when repairing the schema history table.
+     * Valid values are between 100 and 10000.
+     *
+     * @return The chunk size for repair operations. (default: 1000)
+     */
+    int getRepairChunkSize();
 }

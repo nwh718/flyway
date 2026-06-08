@@ -86,6 +86,7 @@ public class FlywayEnvironmentModel {
     private Boolean batch;
     private Boolean outputQueryResults;
     private Integer lockRetryCount;
+    private Integer repairChunkSize;
     private String kerberosConfigFile;
     private Boolean failOnMissingLocations;
     private List<String> loggers;
@@ -146,6 +147,7 @@ public class FlywayEnvironmentModel {
         result.batch = batch.merge(otherPojo.batch);
         result.outputQueryResults = outputQueryResults.merge(otherPojo.outputQueryResults);
         result.lockRetryCount = lockRetryCount.merge(otherPojo.lockRetryCount);
+        result.repairChunkSize = repairChunkSize.merge(otherPojo.repairChunkSize);
         result.kerberosConfigFile = kerberosConfigFile.merge(otherPojo.kerberosConfigFile);
         result.failOnMissingLocations = failOnMissingLocations.merge(otherPojo.failOnMissingLocations);
         result.loggers = loggers.merge(otherPojo.loggers);

@@ -87,23 +87,31 @@ public class DbRepair {
     private final Configuration configuration;
 
     /**
+     * The chunk size for repair operations.
+     */
+    private final int chunkSize;
+
+    /**
      * Creates a new DbRepair.
      *
      * @param database The database-specific support.
      * @param migrationResolver The migration resolver.
      * @param schemaHistory The schema history table.
      * @param callbackExecutor The callback executor.
+     * @param configuration The Flyway configuration.
+     * @param chunkSize The chunk size for repair operations.
      */
     public DbRepair(Database database, CompositeMigrationResolver migrationResolver, SchemaHistory schemaHistory,
-                    CallbackExecutor callbackExecutor, Configuration configuration) {
+                    CallbackExecutor callbackExecutor, Configuration configuration, int chunkSize) {
         this.database = database;
         this.connection = database.getMainConnection();
         this.schemaHistory = schemaHistory;
         this.callbackExecutor = callbackExecutor;
         this.configuration = configuration;
+        this.chunkSize = chunkSize;
 
         this.migrationInfoService = new MigrationInfoServiceImpl(migrationResolver, schemaHistory, database, configuration,
-                                                                 MigrationVersion.LATEST, true, ValidatePatternUtils.getIgnoreAllPattern());
+    public RepairResult repair() {
 
         this.repairResult = CommandResultFactory.createRepairResult(database.getCatalog());
     }

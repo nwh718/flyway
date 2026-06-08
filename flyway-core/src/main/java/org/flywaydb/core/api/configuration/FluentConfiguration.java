@@ -1002,4 +1002,15 @@ public class FluentConfiguration implements Configuration {
         config.setDriver(driver);
         return this;
     }
+
+    /**
+     * Sets the chunk size to use when repairing the schema history table.
+     * Valid values are between 100 and 10000.
+     *
+     * @param repairChunkSize The chunk size for repair operations. (default: 1000)
+     */
+    public FluentConfiguration repairChunkSize(int repairChunkSize) {
+        config.setRepairChunkSize(repairChunkSize);
+        return this;
+    }
 }

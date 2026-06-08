@@ -2129,4 +2129,15 @@ public class ClassicConfiguration implements Configuration {
 
         return getModernFlyway().getJarDirs();
     }
+
+    @Override
+    public int getRepairChunkSize() {
+        return getEnvironmentOverrides().getRepairChunkSize() != null
+            ? getEnvironmentOverrides().getRepairChunkSize()
+            : getModernFlyway().getRepairChunkSize();
+    }
+
+    public void setRepairChunkSize(final Integer repairChunkSize) {
+        getModernFlyway().setRepairChunkSize(repairChunkSize);
+    }
 }
