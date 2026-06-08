@@ -48,6 +48,11 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
      * Regex for matching proper version format
      */
     private static final Pattern SPLIT_REGEX = Pattern.compile("\\.(?=\\d)");
+    private static final int EMPTY_ORDER = 0;
+    private static final int CURRENT_ORDER = 1;
+    private static final int NORMAL_VERSION_ORDER = 2;
+    private static final int NEXT_ORDER = 3;
+    private static final int LATEST_ORDER = 4;
     /**
      * The individual parts this version string is composed of. Ex. 1.2.3.4.0 -> [1, 2, 3, 4, 0]
      */
@@ -78,6 +83,14 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
      */
     @SuppressWarnings("ConstantConditions")
     public static MigrationVersion fromVersion(String version) {
+        final MigrationVersion predefinedVersion = getPredefinedVersion(version);
+        return predefinedVersion != null ? predefinedVersion : new MigrationVersion(version);
+    }
+
+    private static MigrationVersion getPredefinedVersion(String version) {
+        if (version == null) {
+            return EMPTY;
+        }
         if ("current".equalsIgnoreCase(version)) {
             return CURRENT;
         }
@@ -87,10 +100,7 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         if ("latest".equalsIgnoreCase(version) || LATEST.getVersion().equals(version)) {
             return LATEST;
         }
-        if (version == null) {
-            return EMPTY;
-        }
-        return new MigrationVersion(version);
+        return null;
     }
 
     /**
@@ -100,8 +110,8 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
      * means that this version refers to an empty schema.
      */
     private MigrationVersion(String version) {
-        String normalizedVersion = version.replace('_', '.');
-        this.versionParts = tokenize(normalizedVersion);
+        final String normalizedVersion = normalizeVersion(version);
+        this.versionParts = parseVersionParts(normalizedVersion);
         this.displayText = normalizedVersion;
         this.rawVersion = version;
     }
@@ -242,46 +252,30 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
             return 1;
         }
 
-        if (this == EMPTY) {
-            if (o == EMPTY) {
-                return 0;
-            } else {
-                return -1;
-            }
+        final Integer predefinedComparison = comparePredefinedVersions(o);
+        if (predefinedComparison != null) {
+            return predefinedComparison;
         }
 
-        if (this == CURRENT) {
-            return o == CURRENT ? 0 : -1;
-        }
+        return compareVersionParts(o.versionParts);
+    }
 
-        if (this == LATEST) {
-            if (o == LATEST) {
-                return 0;
-            } else {
-                return 1;
-            }
+    private Integer comparePredefinedVersions(MigrationVersion other) {
+        final Integer thisOrder = getPredefinedOrder(this);
+        final Integer otherOrder = getPredefinedOrder(other);
+        if (thisOrder == null && otherOrder == null) {
+            return null;
         }
+        return Integer.compare(
+            thisOrder == null ? NORMAL_VERSION_ORDER : thisOrder,
+            otherOrder == null ? NORMAL_VERSION_ORDER : otherOrder
+        );
+    }
 
-        if (o == EMPTY) {
-            return 1;
-        }
-
-        if (o == CURRENT) {
-            return 1;
-        }
-
-        if (o == NEXT) {
-            return -1;
-        }
-
-        if (o == LATEST) {
-            return -1;
-        }
-        final List<BigInteger> parts1 = versionParts;
-        final List<BigInteger> parts2 = o.versionParts;
-        int largestNumberOfParts = Math.max(parts1.size(), parts2.size());
+    private int compareVersionParts(List<BigInteger> otherVersionParts) {
+        final int largestNumberOfParts = Math.max(versionParts.size(), otherVersionParts.size());
         for (int i = 0; i < largestNumberOfParts; i++) {
-            final int compared = getOrZero(parts1, i).compareTo(getOrZero(parts2, i));
+            final int compared = getOrZero(versionParts, i).compareTo(getOrZero(otherVersionParts, i));
             if (compared != 0) {
                 return compared;
             }
@@ -289,33 +283,49 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         return 0;
     }
 
-    private BigInteger getOrZero(List<BigInteger> elements, int i) {
-        return i < elements.size() ? elements.get(i) : BigInteger.ZERO;
+    private static Integer getPredefinedOrder(MigrationVersion version) {
+        if (version == EMPTY) {
+            return EMPTY_ORDER;
+        }
+        if (version == CURRENT) {
+            return CURRENT_ORDER;
+        }
+        if (version == NEXT) {
+            return NEXT_ORDER;
+        }
+        if (version == LATEST) {
+            return LATEST_ORDER;
+        }
+        return null;
     }
 
-    /**
-     * Splits this string into list of BigIntegers
-     *
-     * @param versionStr The string to split.
-     * @return The resulting array.
-     */
-    private List<BigInteger> tokenize(String versionStr) {
-        List<BigInteger> parts = new ArrayList<>();
-        for (String part : SPLIT_REGEX.split(versionStr)) {
-            parts.add(toBigInteger(versionStr, part));
-        }
+    private static String normalizeVersion(String version) {
+        return version.replace('_', '.');
+    }
 
+    private static List<BigInteger> parseVersionParts(String normalizedVersion) {
+        final List<BigInteger> parts = new ArrayList<>();
+        for (String part : SPLIT_REGEX.split(normalizedVersion)) {
+            parts.add(toBigInteger(normalizedVersion, part));
+        }
+        trimTrailingZeroParts(parts);
+        return parts;
+    }
+
+    private static void trimTrailingZeroParts(List<BigInteger> parts) {
         for (int i = parts.size() - 1; i > 0; i--) {
             if (!parts.get(i).equals(BigInteger.ZERO)) {
                 break;
             }
             parts.remove(i);
         }
-
-        return parts;
     }
 
-    private BigInteger toBigInteger(String versionStr, String part) {
+    private static BigInteger getOrZero(List<BigInteger> elements, int i) {
+        return i < elements.size() ? elements.get(i) : BigInteger.ZERO;
+    }
+
+    private static BigInteger toBigInteger(String versionStr, String part) {
         try {
             return new BigInteger(part);
         } catch (NumberFormatException e) {
