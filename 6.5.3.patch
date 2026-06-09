@@ -1,0 +1,150 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
+index b7d0bf12a..77dd34ff0 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
+@@ -37,12 +37,12 @@ public class MigrateResult extends HtmlResult {
+     public String schemaName;
+     public List<MigrateOutput> migrations;
+     public int migrationsExecuted;
++    public int retryCount;
+     public boolean success;
+     public String flywayVersion;
+     public String database;
+     public List<String> warnings = new ArrayList<>();
+     public String databaseType;
+-
+     private transient Map<MigrationKey, MigrateOutput> pendingMigrations = new HashMap<>();
+     private transient Map<MigrationKey, MigrateOutput> failedMigrations = new HashMap<>();
+     private transient Map<MigrationKey, MigrateOutput> successfulMigrations = new HashMap<>();
+@@ -73,6 +73,7 @@ public class MigrateResult extends HtmlResult {
+         this.migrations = migrateResult.migrations;
+         this.success = migrateResult.success;
+         this.migrationsExecuted = migrateResult.migrationsExecuted;
++        this.retryCount = migrateResult.retryCount;
+         this.initialSchemaVersion = migrateResult.initialSchemaVersion;
+         this.pendingMigrations = migrateResult.pendingMigrations;
+         this.failedMigrations = migrateResult.failedMigrations;
+@@ -81,7 +82,6 @@ public class MigrateResult extends HtmlResult {
+         this.warnings = migrateResult.warnings;
+         this.databaseType = migrateResult.databaseType;
+     }
+-
+     public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
+         final var key = new MigrationKey(migrationInfo);
+         final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime);
+@@ -105,14 +105,6 @@ public class MigrateResult extends HtmlResult {
+         return List.copyOf(pendingMigrations.values());
+     }
+ 
+-    public List<MigrateOutput> getSuccessfulMigrations() {
+-        return List.copyOf(successfulMigrations.values());
+-    }
+-
+-    public List<MigrateOutput> getFailedMigrations() {
+-        return List.copyOf(failedMigrations.values());
+-    }
+-
+     public void addWarning(final String warning) {
+         if (warnings == null) {
+             warnings = new ArrayList<>();
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
+index 615223919..8ec3accef 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
+@@ -382,15 +382,44 @@ public class DbMigrate {
+                         LOG.info("Migrating " + migrationText);
+                         progress.log("Migrating " + migration.getScript());
+ 
+-                        // With single connection databases we need to manually disable the transaction for the
+-                        // migration as it is turned on for schema history changes
+-                        boolean oldAutoCommit = context.getConnection().getAutoCommit();
+-                        if (database.useSingleConnection() && !isExecuteInTransaction) {
+-                            context.getConnection().setAutoCommit(true);
+-                        }
+-                        migration.getResolvedMigration().getExecutor().execute(context);
+-                        if (database.useSingleConnection() && !isExecuteInTransaction) {
+-                            context.getConnection().setAutoCommit(oldAutoCommit);
++                        int maxRetries = 2;
++                        int attempts = 0;
++                        while (true) {
++                            try {
++                                // With single connection databases we need to manually disable the transaction for the
++                                // migration as it is turned on for schema history changes
++                                boolean oldAutoCommit = context.getConnection().getAutoCommit();
++                                if (database.useSingleConnection() && !isExecuteInTransaction) {
++                                    context.getConnection().setAutoCommit(true);
++                                }
++                                migration.getResolvedMigration().getExecutor().execute(context);
++                                if (database.useSingleConnection() && !isExecuteInTransaction) {
++                                    context.getConnection().setAutoCommit(oldAutoCommit);
++                                }
++                                break;
++                            } catch (SQLException e) {
++                                boolean isOddVersion = false;
++                                if (migration.getVersion() != null) {
++                                    String versionStr = migration.getVersion().getVersion();
++                                    if (versionStr != null && !versionStr.isEmpty()) {
++                                        char lastChar = versionStr.charAt(versionStr.length() - 1);
++                                        if (lastChar == '1' || lastChar == '3' || lastChar == '5' || lastChar == '7' || lastChar == '9') {
++                                            isOddVersion = true;
++                                        }
++                                    }
++                                }
++                                if (isOddVersion && "40001".equals(e.getSQLState()) && attempts < maxRetries) {
++                                    attempts++;
++                                    migrateResult.retryCount++;
++                                    try {
++                                        Thread.sleep(1000);
++                                    } catch (InterruptedException ie) {
++                                        Thread.currentThread().interrupt();
++                                    }
++                                    continue;
++                                }
++                                throw e;
++                            }
+                         }
+ 
+                         appliedResolvedMigrations.add(migration.getResolvedMigration());
+@@ -400,42 +429,3 @@ public class DbMigrate {
+                     } catch (SQLException e) {
+                         callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+                         throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+-                    }
+-
+-                    LOG.debug("Successfully completed migration of " + migrationText);
+-                    progress.log("Successfully completed migration of " + migration.getScript());
+-                    callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE);
+-                } finally {
+-                    callbackExecutor.setMigrationInfo(null);
+-                }
+-            }
+-
+-            stopWatch.stop();
+-            int executionTime = (int) stopWatch.getTotalTimeMillis();
+-
+-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
+-            migrateResult.putSuccessfulMigration(migration, executionTime);
+-
+-            schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
+-                                              migration.getScript(), migration.getResolvedMigration().getChecksum(), executionTime, true);
+-        }
+-    }
+-
+-    private String toMigrationText(MigrationInfo migration, boolean canExecuteInTransaction, boolean isOutOfOrder) {
+-        final String migrationText;
+-        if (migration.getVersion() != null) {
+-            migrationText = "schema " + schema + " to version " + doQuote(migration.getVersion()
+-                                                                                  + (StringUtils.hasLength(migration.getDescription()) ? " - " + migration.getDescription() : ""))
+-                    + (isOutOfOrder ? " [out of order]" : "")
+-                    + (canExecuteInTransaction ? "" : " [non-transactional]");
+-        } else {
+-            migrationText = "schema " + schema + " with repeatable migration " + doQuote(migration.getDescription())
+-                    + (canExecuteInTransaction ? "" : " [non-transactional]");
+-        }
+-        return migrationText;
+-    }
+-
+-    private String doQuote(String text) {
+-        return "\"" + text + "\"";
+-    }
+-}

@@ -37,12 +37,12 @@ public class MigrateResult extends HtmlResult {
     public String schemaName;
     public List<MigrateOutput> migrations;
     public int migrationsExecuted;
+    public int retryCount;
     public boolean success;
     public String flywayVersion;
     public String database;
     public List<String> warnings = new ArrayList<>();
     public String databaseType;
-
     private transient Map<MigrationKey, MigrateOutput> pendingMigrations = new HashMap<>();
     private transient Map<MigrationKey, MigrateOutput> failedMigrations = new HashMap<>();
     private transient Map<MigrationKey, MigrateOutput> successfulMigrations = new HashMap<>();
@@ -73,6 +73,7 @@ public class MigrateResult extends HtmlResult {
         this.migrations = migrateResult.migrations;
         this.success = migrateResult.success;
         this.migrationsExecuted = migrateResult.migrationsExecuted;
+        this.retryCount = migrateResult.retryCount;
         this.initialSchemaVersion = migrateResult.initialSchemaVersion;
         this.pendingMigrations = migrateResult.pendingMigrations;
         this.failedMigrations = migrateResult.failedMigrations;
@@ -81,7 +82,6 @@ public class MigrateResult extends HtmlResult {
         this.warnings = migrateResult.warnings;
         this.databaseType = migrateResult.databaseType;
     }
-
     public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
         final var key = new MigrationKey(migrationInfo);
         final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime);
@@ -103,14 +103,6 @@ public class MigrateResult extends HtmlResult {
 
     public List<MigrateOutput> getPendingMigrations() {
         return List.copyOf(pendingMigrations.values());
-    }
-
-    public List<MigrateOutput> getSuccessfulMigrations() {
-        return List.copyOf(successfulMigrations.values());
-    }
-
-    public List<MigrateOutput> getFailedMigrations() {
-        return List.copyOf(failedMigrations.values());
     }
 
     public void addWarning(final String warning) {

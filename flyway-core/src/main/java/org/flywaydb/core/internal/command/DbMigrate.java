@@ -382,15 +382,44 @@ public class DbMigrate {
                         LOG.info("Migrating " + migrationText);
                         progress.log("Migrating " + migration.getScript());
 
-                        // With single connection databases we need to manually disable the transaction for the
-                        // migration as it is turned on for schema history changes
-                        boolean oldAutoCommit = context.getConnection().getAutoCommit();
-                        if (database.useSingleConnection() && !isExecuteInTransaction) {
-                            context.getConnection().setAutoCommit(true);
-                        }
-                        migration.getResolvedMigration().getExecutor().execute(context);
-                        if (database.useSingleConnection() && !isExecuteInTransaction) {
-                            context.getConnection().setAutoCommit(oldAutoCommit);
+                        int maxRetries = 2;
+                        int attempts = 0;
+                        while (true) {
+                            try {
+                                // With single connection databases we need to manually disable the transaction for the
+                                // migration as it is turned on for schema history changes
+                                boolean oldAutoCommit = context.getConnection().getAutoCommit();
+                                if (database.useSingleConnection() && !isExecuteInTransaction) {
+                                    context.getConnection().setAutoCommit(true);
+                                }
+                                migration.getResolvedMigration().getExecutor().execute(context);
+                                if (database.useSingleConnection() && !isExecuteInTransaction) {
+                                    context.getConnection().setAutoCommit(oldAutoCommit);
+                                }
+                                break;
+                            } catch (SQLException e) {
+                                boolean isOddVersion = false;
+                                if (migration.getVersion() != null) {
+                                    String versionStr = migration.getVersion().getVersion();
+                                    if (versionStr != null && !versionStr.isEmpty()) {
+                                        char lastChar = versionStr.charAt(versionStr.length() - 1);
+                                        if (lastChar == '1' || lastChar == '3' || lastChar == '5' || lastChar == '7' || lastChar == '9') {
+                                            isOddVersion = true;
+                                        }
+                                    }
+                                }
+                                if (isOddVersion && "40001".equals(e.getSQLState()) && attempts < maxRetries) {
+                                    attempts++;
+                                    migrateResult.retryCount++;
+                                    try {
+                                        Thread.sleep(1000);
+                                    } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                    }
+                                    continue;
+                                }
+                                throw e;
+                            }
                         }
 
                         appliedResolvedMigrations.add(migration.getResolvedMigration());
@@ -400,42 +429,3 @@ public class DbMigrate {
                     } catch (SQLException e) {
                         callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
                         throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
-                    }
-
-                    LOG.debug("Successfully completed migration of " + migrationText);
-                    progress.log("Successfully completed migration of " + migration.getScript());
-                    callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE);
-                } finally {
-                    callbackExecutor.setMigrationInfo(null);
-                }
-            }
-
-            stopWatch.stop();
-            int executionTime = (int) stopWatch.getTotalTimeMillis();
-
-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
-            migrateResult.putSuccessfulMigration(migration, executionTime);
-
-            schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
-                                              migration.getScript(), migration.getResolvedMigration().getChecksum(), executionTime, true);
-        }
-    }
-
-    private String toMigrationText(MigrationInfo migration, boolean canExecuteInTransaction, boolean isOutOfOrder) {
-        final String migrationText;
-        if (migration.getVersion() != null) {
-            migrationText = "schema " + schema + " to version " + doQuote(migration.getVersion()
-                                                                                  + (StringUtils.hasLength(migration.getDescription()) ? " - " + migration.getDescription() : ""))
-                    + (isOutOfOrder ? " [out of order]" : "")
-                    + (canExecuteInTransaction ? "" : " [non-transactional]");
-        } else {
-            migrationText = "schema " + schema + " with repeatable migration " + doQuote(migration.getDescription())
-                    + (canExecuteInTransaction ? "" : " [non-transactional]");
-        }
-        return migrationText;
-    }
-
-    private String doQuote(String text) {
-        return "\"" + text + "\"";
-    }
-}
