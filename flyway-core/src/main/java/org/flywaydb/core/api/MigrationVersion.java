@@ -242,41 +242,11 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
             return 1;
         }
 
-        if (this == EMPTY) {
-            if (o == EMPTY) {
-                return 0;
-            } else {
-                return -1;
-            }
+        int predefinedComparison = comparePredefinedVersions(this, o);
+        if (predefinedComparison != Integer.MIN_VALUE) {
+            return predefinedComparison;
         }
 
-        if (this == CURRENT) {
-            return o == CURRENT ? 0 : -1;
-        }
-
-        if (this == LATEST) {
-            if (o == LATEST) {
-                return 0;
-            } else {
-                return 1;
-            }
-        }
-
-        if (o == EMPTY) {
-            return 1;
-        }
-
-        if (o == CURRENT) {
-            return 1;
-        }
-
-        if (o == NEXT) {
-            return -1;
-        }
-
-        if (o == LATEST) {
-            return -1;
-        }
         final List<BigInteger> parts1 = versionParts;
         final List<BigInteger> parts2 = o.versionParts;
         int largestNumberOfParts = Math.max(parts1.size(), parts2.size());
@@ -287,6 +257,44 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
             }
         }
         return 0;
+    }
+
+    private static int comparePredefinedVersions(MigrationVersion v1, MigrationVersion v2) {
+        boolean v1IsPredefined = v1.predefined;
+        boolean v2IsPredefined = v2.predefined;
+
+        if (!v1IsPredefined && !v2IsPredefined) {
+            return Integer.MIN_VALUE;
+        }
+
+        int v1Order = getPredefinedOrder(v1);
+        int v2Order = getPredefinedOrder(v2);
+
+        if (v1IsPredefined && v2IsPredefined) {
+            return Integer.compare(v1Order, v2Order);
+        }
+
+        if (v1IsPredefined) {
+            return v1 == EMPTY ? -1 : 1;
+        }
+
+        return v2 == EMPTY ? 1 : -1;
+    }
+
+    private static int getPredefinedOrder(MigrationVersion version) {
+        if (!version.predefined) {
+            return 2;
+        }
+        if (version == EMPTY) {
+            return 0;
+        }
+        if (version == CURRENT || version == NEXT) {
+            return 1;
+        }
+        if (version == LATEST) {
+            return 3;
+        }
+        return 2;
     }
 
     private BigInteger getOrZero(List<BigInteger> elements, int i) {
