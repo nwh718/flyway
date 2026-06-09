@@ -242,41 +242,33 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
             return 1;
         }
 
+        int thisOrdinal = predefinedOrdinal();
+        int otherOrdinal = o.predefinedOrdinal();
+
+        if (thisOrdinal >= 0 || otherOrdinal >= 0) {
+            return Integer.compare(thisOrdinal, otherOrdinal);
+        }
+
+        return compareVersionParts(o);
+    }
+
+    private int predefinedOrdinal() {
         if (this == EMPTY) {
-            if (o == EMPTY) {
-                return 0;
-            } else {
-                return -1;
-            }
+            return 0;
         }
-
         if (this == CURRENT) {
-            return o == CURRENT ? 0 : -1;
+            return 1;
         }
-
+        if (this == NEXT) {
+            return 3;
+        }
         if (this == LATEST) {
-            if (o == LATEST) {
-                return 0;
-            } else {
-                return 1;
-            }
+            return 4;
         }
+        return -1;
+    }
 
-        if (o == EMPTY) {
-            return 1;
-        }
-
-        if (o == CURRENT) {
-            return 1;
-        }
-
-        if (o == NEXT) {
-            return -1;
-        }
-
-        if (o == LATEST) {
-            return -1;
-        }
+    private int compareVersionParts(MigrationVersion o) {
         final List<BigInteger> parts1 = versionParts;
         final List<BigInteger> parts2 = o.versionParts;
         int largestNumberOfParts = Math.max(parts1.size(), parts2.size());

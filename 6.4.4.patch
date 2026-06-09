@@ -1,0 +1,64 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/MigrationVersion.java b/flyway-core/src/main/java/org/flywaydb/core/api/MigrationVersion.java
+index 1d7c8355a..e03e27048 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/MigrationVersion.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/MigrationVersion.java
+@@ -242,41 +242,33 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
+             return 1;
+         }
+ 
+-        if (this == EMPTY) {
+-            if (o == EMPTY) {
+-                return 0;
+-            } else {
+-                return -1;
+-            }
+-        }
++        int thisOrdinal = predefinedOrdinal();
++        int otherOrdinal = o.predefinedOrdinal();
+ 
+-        if (this == CURRENT) {
+-            return o == CURRENT ? 0 : -1;
++        if (thisOrdinal >= 0 || otherOrdinal >= 0) {
++            return Integer.compare(thisOrdinal, otherOrdinal);
+         }
+ 
+-        if (this == LATEST) {
+-            if (o == LATEST) {
+-                return 0;
+-            } else {
+-                return 1;
+-            }
+-        }
++        return compareVersionParts(o);
++    }
+ 
+-        if (o == EMPTY) {
+-            return 1;
++    private int predefinedOrdinal() {
++        if (this == EMPTY) {
++            return 0;
+         }
+-
+-        if (o == CURRENT) {
++        if (this == CURRENT) {
+             return 1;
+         }
+-
+-        if (o == NEXT) {
+-            return -1;
++        if (this == NEXT) {
++            return 3;
+         }
+-
+-        if (o == LATEST) {
+-            return -1;
++        if (this == LATEST) {
++            return 4;
+         }
++        return -1;
++    }
++
++    private int compareVersionParts(MigrationVersion o) {
+         final List<BigInteger> parts1 = versionParts;
+         final List<BigInteger> parts2 = o.versionParts;
+         int largestNumberOfParts = Math.max(parts1.size(), parts2.size());
