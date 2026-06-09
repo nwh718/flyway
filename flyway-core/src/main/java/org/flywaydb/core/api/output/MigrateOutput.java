@@ -33,4 +33,5 @@ public class MigrateOutput {
     public int executionTime;
 
     public transient Boolean rolledBack;
+    public int retryCount;
 }

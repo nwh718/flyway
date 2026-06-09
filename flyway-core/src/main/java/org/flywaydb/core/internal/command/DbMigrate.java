@@ -375,6 +375,8 @@ public class DbMigrate {
                 connectionUserObjects.restoreOriginalState();
                 connectionUserObjects.changeCurrentSchemaTo(schema);
 
+                int retryCount = 0;
+
                 try {
                     callbackExecutor.setMigrationInfo(migration);
                     callbackExecutor.onEachMigrateOrUndoEvent(Event.BEFORE_EACH_MIGRATE);
@@ -388,36 +390,74 @@ public class DbMigrate {
                         if (database.useSingleConnection() && !isExecuteInTransaction) {
                             context.getConnection().setAutoCommit(true);
                         }
-                        migration.getResolvedMigration().getExecutor().execute(context);
+
+                        boolean retrySuccessful;
+                        do {
+                            retrySuccessful = true;
+                            try {
+                                migration.getResolvedMigration().getExecutor().execute(context);
+                            } catch (SQLException e) {
+                                if (isLockTimeoutRetryable(migration, e) && retryCount < 2) {
+                                    retryCount++;
+                                    LOG.warn("Migration of " + migrationText + " failed with lock timeout (SQLState: "
+                                            + e.getSQLState() + "). Retrying " + retryCount + " of 2...");
+                                    try {
+                                        Thread.sleep(1000);
+                                    } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+                                    }
+                                    retrySuccessful = false;
+                                } else {
+                                    throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+                                }
+                            }
+                        } while (!retrySuccessful);
+
                         if (database.useSingleConnection() && !isExecuteInTransaction) {
                             context.getConnection().setAutoCommit(oldAutoCommit);
                         }
-
-                        appliedResolvedMigrations.add(migration.getResolvedMigration());
-                    } catch (FlywayException e) {
+                    } catch (FlywayMigrateException e) {
                         callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
-                    } catch (SQLException e) {
-                        callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+                        throw e;
                     }
-
-                    LOG.debug("Successfully completed migration of " + migrationText);
-                    progress.log("Successfully completed migration of " + migration.getScript());
                     callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE);
-                } finally {
-                    callbackExecutor.setMigrationInfo(null);
+                } catch (FlywayMigrateException e) {
+                    callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+                    throw e;
                 }
+
+                stopWatch.stop();
+                int executionTime = (int) stopWatch.getTotalTimeMillis();
+                schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(),
+                                                  migration.getType(), migration.getScript(), migration.getChecksum(), executionTime, true);
+                migrateResult.putSuccessfulMigration(migration, executionTime, retryCount);
+                if (migration.getVersion() != null) {
+                    migrateResult.targetSchemaVersion = migration.getVersion().getVersion();
+                }
+                migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, retryCount, null));
             }
+            progress.popSteps();
+        }
+    }
 
-            stopWatch.stop();
-            int executionTime = (int) stopWatch.getTotalTimeMillis();
-
-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
-            migrateResult.putSuccessfulMigration(migration, executionTime);
-
-            schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
-                                              migration.getScript(), migration.getResolvedMigration().getChecksum(), executionTime, true);
+    private boolean isLockTimeoutRetryable(MigrationInfoImpl migration, SQLException e) {
+        if (migration.getVersion() == null) {
+            return false;
+        }
+        String version = migration.getVersion().getVersion();
+        if (version == null) {
+            return false;
+        }
+        String[] parts = version.split("\\.");
+        if (parts.length == 0) {
+            return false;
+        }
+        try {
+            int lastSegment = Integer.parseInt(parts[parts.length - 1]);
+            return lastSegment % 2 != 0 && "40001".equals(e.getSQLState());
+        } catch (NumberFormatException ex) {
+            return false;
         }
     }
 

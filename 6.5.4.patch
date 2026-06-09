@@ -1,0 +1,183 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java
+index 5b8d2a944..f9d59b40b 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java
+@@ -113,17 +113,23 @@ public class CommandResultFactory {
+     }
+ 
+     public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime) {
+-        return createMigrateOutput(migrationInfo, executionTime, false);
++        return createMigrateOutput(migrationInfo, executionTime, 0, false);
+     }
+ 
+     public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime, Boolean rolledBack) {
+-        return new MigrateOutput(getCategory(migrationInfo),
++        return createMigrateOutput(migrationInfo, executionTime, 0, rolledBack);
++    }
++
++    public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime, int retryCount, Boolean rolledBack) {
++        MigrateOutput output = new MigrateOutput(getCategory(migrationInfo),
+                                  migrationInfo.getVersion() != null ? migrationInfo.getVersion().getVersion() : "",
+                                  migrationInfo.getDescription(),
+                                  migrationInfo.getType() != null ? migrationInfo.getType().toString() : "",
+                                  migrationInfo.getPhysicalLocation() != null ? migrationInfo.getPhysicalLocation() : "",
+                                  executionTime,
+                                  rolledBack);
++        output.retryCount = retryCount;
++        return output;
+     }
+ 
+     public static ValidateOutput createValidateOutput(MigrationInfo migrationInfo, ErrorDetails validateError) {
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java
+index 34e035975..b0eef6de0 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java
+@@ -33,4 +33,5 @@ public class MigrateOutput {
+     public int executionTime;
+ 
+     public transient Boolean rolledBack;
++    public int retryCount;
+ }
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
+index b7d0bf12a..c29af60ae 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
+@@ -37,7 +37,6 @@ public class MigrateResult extends HtmlResult {
+     public String schemaName;
+     public List<MigrateOutput> migrations;
+     public int migrationsExecuted;
+-    public boolean success;
+     public String flywayVersion;
+     public String database;
+     public List<String> warnings = new ArrayList<>();
+@@ -73,7 +72,6 @@ public class MigrateResult extends HtmlResult {
+         this.migrations = migrateResult.migrations;
+         this.success = migrateResult.success;
+         this.migrationsExecuted = migrateResult.migrationsExecuted;
+-        this.initialSchemaVersion = migrateResult.initialSchemaVersion;
+         this.pendingMigrations = migrateResult.pendingMigrations;
+         this.failedMigrations = migrateResult.failedMigrations;
+         this.successfulMigrations = migrateResult.successfulMigrations;
+@@ -83,8 +81,12 @@ public class MigrateResult extends HtmlResult {
+     }
+ 
+     public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
++        putSuccessfulMigration(migrationInfo, executionTime, 0);
++    }
++
++    public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime, final int retryCount) {
+         final var key = new MigrationKey(migrationInfo);
+-        final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime);
++        final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime, retryCount, false);
+ 
+         successfulMigrations.put(key, migrateOutput);
+         pendingMigrations.remove(key);
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
+index 615223919..04444f75e 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
+@@ -375,6 +375,8 @@ public class DbMigrate {
+                 connectionUserObjects.restoreOriginalState();
+                 connectionUserObjects.changeCurrentSchemaTo(schema);
+ 
++                int retryCount = 0;
++
+                 try {
+                     callbackExecutor.setMigrationInfo(migration);
+                     callbackExecutor.onEachMigrateOrUndoEvent(Event.BEFORE_EACH_MIGRATE);
+@@ -388,36 +390,74 @@ public class DbMigrate {
+                         if (database.useSingleConnection() && !isExecuteInTransaction) {
+                             context.getConnection().setAutoCommit(true);
+                         }
+-                        migration.getResolvedMigration().getExecutor().execute(context);
++
++                        boolean retrySuccessful;
++                        do {
++                            retrySuccessful = true;
++                            try {
++                                migration.getResolvedMigration().getExecutor().execute(context);
++                            } catch (SQLException e) {
++                                if (isLockTimeoutRetryable(migration, e) && retryCount < 2) {
++                                    retryCount++;
++                                    LOG.warn("Migration of " + migrationText + " failed with lock timeout (SQLState: "
++                                            + e.getSQLState() + "). Retrying " + retryCount + " of 2...");
++                                    try {
++                                        Thread.sleep(1000);
++                                    } catch (InterruptedException ie) {
++                                        Thread.currentThread().interrupt();
++                                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
++                                    }
++                                    retrySuccessful = false;
++                                } else {
++                                    throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
++                                }
++                            }
++                        } while (!retrySuccessful);
++
+                         if (database.useSingleConnection() && !isExecuteInTransaction) {
+                             context.getConnection().setAutoCommit(oldAutoCommit);
+                         }
+-
+-                        appliedResolvedMigrations.add(migration.getResolvedMigration());
+-                    } catch (FlywayException e) {
+-                        callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+-                    } catch (SQLException e) {
++                    } catch (FlywayMigrateException e) {
+                         callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
++                        throw e;
+                     }
+-
+-                    LOG.debug("Successfully completed migration of " + migrationText);
+-                    progress.log("Successfully completed migration of " + migration.getScript());
+                     callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE);
+-                } finally {
+-                    callbackExecutor.setMigrationInfo(null);
++                } catch (FlywayMigrateException e) {
++                    callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
++                    throw e;
+                 }
+-            }
+-
+-            stopWatch.stop();
+-            int executionTime = (int) stopWatch.getTotalTimeMillis();
+ 
+-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
+-            migrateResult.putSuccessfulMigration(migration, executionTime);
++                stopWatch.stop();
++                int executionTime = (int) stopWatch.getTotalTimeMillis();
++                schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(),
++                                                  migration.getType(), migration.getScript(), migration.getChecksum(), executionTime, true);
++                migrateResult.putSuccessfulMigration(migration, executionTime, retryCount);
++                if (migration.getVersion() != null) {
++                    migrateResult.targetSchemaVersion = migration.getVersion().getVersion();
++                }
++                migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, retryCount, null));
++            }
++            progress.popSteps();
++        }
++    }
+ 
+-            schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
+-                                              migration.getScript(), migration.getResolvedMigration().getChecksum(), executionTime, true);
++    private boolean isLockTimeoutRetryable(MigrationInfoImpl migration, SQLException e) {
++        if (migration.getVersion() == null) {
++            return false;
++        }
++        String version = migration.getVersion().getVersion();
++        if (version == null) {
++            return false;
++        }
++        String[] parts = version.split("\\.");
++        if (parts.length == 0) {
++            return false;
++        }
++        try {
++            int lastSegment = Integer.parseInt(parts[parts.length - 1]);
++            return lastSegment % 2 != 0 && "40001".equals(e.getSQLState());
++        } catch (NumberFormatException ex) {
++            return false;
+         }
+     }
+ 

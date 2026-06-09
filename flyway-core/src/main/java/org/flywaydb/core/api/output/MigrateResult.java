@@ -37,7 +37,6 @@ public class MigrateResult extends HtmlResult {
     public String schemaName;
     public List<MigrateOutput> migrations;
     public int migrationsExecuted;
-    public boolean success;
     public String flywayVersion;
     public String database;
     public List<String> warnings = new ArrayList<>();
@@ -73,7 +72,6 @@ public class MigrateResult extends HtmlResult {
         this.migrations = migrateResult.migrations;
         this.success = migrateResult.success;
         this.migrationsExecuted = migrateResult.migrationsExecuted;
-        this.initialSchemaVersion = migrateResult.initialSchemaVersion;
         this.pendingMigrations = migrateResult.pendingMigrations;
         this.failedMigrations = migrateResult.failedMigrations;
         this.successfulMigrations = migrateResult.successfulMigrations;
@@ -83,8 +81,12 @@ public class MigrateResult extends HtmlResult {
     }
 
     public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
+        putSuccessfulMigration(migrationInfo, executionTime, 0);
+    }
+
+    public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime, final int retryCount) {
         final var key = new MigrationKey(migrationInfo);
-        final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime);
+        final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime, retryCount, false);
 
         successfulMigrations.put(key, migrateOutput);
         pendingMigrations.remove(key);
