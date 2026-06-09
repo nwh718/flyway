@@ -22,12 +22,6 @@
       <version>${project.version}</version>
     </dependency>
 
-
-
-
-
-
-
     <dependency>
       <groupId>org.gradle</groupId>
       <artifactId>gradle-core</artifactId>
@@ -138,20 +132,6 @@
           </execution>
         </executions>
       </plugin>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     </plugins>
   </build>
 </project>
