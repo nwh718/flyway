@@ -365,7 +365,6 @@ public class DbMigrate {
                 isPreviousVersioned = false;
             }
 
-            if (skipExecutingMigrations) {
                 LOG.debug("Skipping execution of migration of " + migrationText);
                 progress.log("Skipping migration of " + migration.getScript());
             } else {
@@ -383,47 +382,15 @@ public class DbMigrate {
                         progress.log("Migrating " + migration.getScript());
 
                         // With single connection databases we need to manually disable the transaction for the
+                        // With single connection databases we need to manually disable the transaction for the
                         // migration as it is turned on for schema history changes
                         boolean oldAutoCommit = context.getConnection().getAutoCommit();
                         if (database.useSingleConnection() && !isExecuteInTransaction) {
                             context.getConnection().setAutoCommit(true);
                         }
-                        migration.getResolvedMigration().getExecutor().execute(context);
+                        executeMigrationWithRetries(migration, context);
                         if (database.useSingleConnection() && !isExecuteInTransaction) {
                             context.getConnection().setAutoCommit(oldAutoCommit);
-                        }
-
-                        appliedResolvedMigrations.add(migration.getResolvedMigration());
-                    } catch (FlywayException e) {
-                        callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
-                    } catch (SQLException e) {
-                        callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
-                    }
-
-                    LOG.debug("Successfully completed migration of " + migrationText);
-                    progress.log("Successfully completed migration of " + migration.getScript());
-                    callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE);
-                } finally {
-                    callbackExecutor.setMigrationInfo(null);
-                }
-            }
-
-            stopWatch.stop();
-            int executionTime = (int) stopWatch.getTotalTimeMillis();
-
-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
-            migrateResult.putSuccessfulMigration(migration, executionTime);
-
-            schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
-                                              migration.getScript(), migration.getResolvedMigration().getChecksum(), executionTime, true);
-        }
-    }
-
-    private String toMigrationText(MigrationInfo migration, boolean canExecuteInTransaction, boolean isOutOfOrder) {
-        final String migrationText;
-        if (migration.getVersion() != null) {
             migrationText = "schema " + schema + " to version " + doQuote(migration.getVersion()
                                                                                   + (StringUtils.hasLength(migration.getDescription()) ? " - " + migration.getDescription() : ""))
                     + (isOutOfOrder ? " [out of order]" : "")
@@ -433,6 +400,60 @@ public class DbMigrate {
                     + (canExecuteInTransaction ? "" : " [non-transactional]");
         }
         return migrationText;
+    }
+
+    private void executeMigrationWithRetries(MigrationInfoImpl migration, Context context) throws SQLException {
+        int retryCount = 0;
+
+        while (true) {
+            try {
+                migration.getResolvedMigration().getExecutor().execute(context);
+                migrateResult.recordRetryCount(migration, retryCount);
+                return;
+            } catch (SQLException e) {
+                if (!shouldRetryMigration(migration, e, retryCount)) {
+                    migrateResult.recordRetryCount(migration, retryCount);
+                    throw e;
+                }
+
+                retryCount++;
+                sleepBeforeRetry(migration, e);
+            }
+        }
+    }
+
+    private boolean shouldRetryMigration(MigrationInfoImpl migration, SQLException exception, int retryCount) {
+        return retryCount < 2 && "40001".equals(exception.getSQLState()) && isOddVersionedMigration(migration);
+    }
+
+    private boolean isOddVersionedMigration(MigrationInfoImpl migration) {
+        if (!migration.isVersioned() || migration.getVersion() == null) {
+            return false;
+        }
+
+        String version = migration.getVersion().getVersion();
+        if (!StringUtils.hasLength(version)) {
+            return false;
+        }
+
+        String[] versionParts = version.split("\\.");
+        String lastPart = versionParts[versionParts.length - 1];
+        if (!lastPart.chars().allMatch(Character::isDigit)) {
+            return false;
+        }
+
+        return (lastPart.charAt(lastPart.length() - 1) - '0') % 2 != 0;
+    }
+
+    private void sleepBeforeRetry(MigrationInfoImpl migration, SQLException exception) throws SQLException {
+        try {
+            Thread.sleep(1000L);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            SQLException interruptedSqlException = new SQLException("Interrupted while retrying migration " + migration.getScript(), exception.getSQLState(), interruptedException);
+            interruptedSqlException.setNextException(exception);
+            throw interruptedSqlException;
+        }
     }
 
     private String doQuote(String text) {

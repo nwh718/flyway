@@ -117,17 +117,12 @@ public class CommandResultFactory {
     }
 
     public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime, Boolean rolledBack) {
-        return new MigrateOutput(getCategory(migrationInfo),
-                                 migrationInfo.getVersion() != null ? migrationInfo.getVersion().getVersion() : "",
-                                 migrationInfo.getDescription(),
-                                 migrationInfo.getType() != null ? migrationInfo.getType().toString() : "",
                                  migrationInfo.getPhysicalLocation() != null ? migrationInfo.getPhysicalLocation() : "",
                                  executionTime,
                                  rolledBack);
     }
 
     public static ValidateOutput createValidateOutput(MigrationInfo migrationInfo, ErrorDetails validateError) {
-        return new ValidateOutput(
                 migrationInfo.getVersion() != null ? migrationInfo.getVersion().getVersion() : "",
                 migrationInfo.getDescription(),
                 migrationInfo.getPhysicalLocation() != null ? migrationInfo.getPhysicalLocation() : "",

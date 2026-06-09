@@ -1,0 +1,218 @@
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java
+index 5b8d2a944..fcd15eb19 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/CommandResultFactory.java
+@@ -117,17 +117,12 @@ public class CommandResultFactory {
+     }
+ 
+     public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime, Boolean rolledBack) {
+-        return new MigrateOutput(getCategory(migrationInfo),
+-                                 migrationInfo.getVersion() != null ? migrationInfo.getVersion().getVersion() : "",
+-                                 migrationInfo.getDescription(),
+-                                 migrationInfo.getType() != null ? migrationInfo.getType().toString() : "",
+                                  migrationInfo.getPhysicalLocation() != null ? migrationInfo.getPhysicalLocation() : "",
+                                  executionTime,
+                                  rolledBack);
+     }
+ 
+     public static ValidateOutput createValidateOutput(MigrationInfo migrationInfo, ErrorDetails validateError) {
+-        return new ValidateOutput(
+                 migrationInfo.getVersion() != null ? migrationInfo.getVersion().getVersion() : "",
+                 migrationInfo.getDescription(),
+                 migrationInfo.getPhysicalLocation() != null ? migrationInfo.getPhysicalLocation() : "",
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java
+index 34e035975..db3bf1fb3 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateOutput.java
+@@ -19,8 +19,10 @@
+  */
+ package org.flywaydb.core.api.output;
+ 
++import lombok.AllArgsConstructor;
+ import lombok.AllArgsConstructor;
+ import lombok.NoArgsConstructor;
++@AllArgsConstructor
+ 
+ @AllArgsConstructor
+ @NoArgsConstructor
+@@ -29,8 +31,5 @@ public class MigrateOutput {
+     public String version;
+     public String description;
+     public String type;
+-    public String filepath;
+     public int executionTime;
+ 
+-    public transient Boolean rolledBack;
+-}
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
+index b7d0bf12a..65d5b7a9a 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/api/output/MigrateResult.java
+@@ -42,6 +42,7 @@ public class MigrateResult extends HtmlResult {
+     public String database;
+     public List<String> warnings = new ArrayList<>();
+     public String databaseType;
++    public Map<String, Integer> retryCounts = new HashMap<>();
+ 
+     private transient Map<MigrationKey, MigrateOutput> pendingMigrations = new HashMap<>();
+     private transient Map<MigrationKey, MigrateOutput> failedMigrations = new HashMap<>();
+@@ -80,6 +81,7 @@ public class MigrateResult extends HtmlResult {
+         this.targetSchemaVersion = migrateResult.targetSchemaVersion;
+         this.warnings = migrateResult.warnings;
+         this.databaseType = migrateResult.databaseType;
++        this.retryCounts = migrateResult.retryCounts;
+     }
+ 
+     public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
+@@ -101,6 +103,14 @@ public class MigrateResult extends HtmlResult {
+         pendingMigrations.remove(key);
+     }
+ 
++    public void recordRetryCount(final MigrationInfo migrationInfo, final int retryCount) {
++        if (retryCount <= 0) {
++            return;
++        }
++
++        retryCounts.put(createRetryCountKey(migrationInfo), retryCount);
++    }
++
+     public List<MigrateOutput> getPendingMigrations() {
+         return List.copyOf(pendingMigrations.values());
+     }
+@@ -146,4 +156,12 @@ public class MigrateResult extends HtmlResult {
+             }
+         }
+     }
++
++    private String createRetryCountKey(final MigrationInfo migrationInfo) {
++        if (migrationInfo.isVersioned()) {
++            return migrationInfo.getVersion().getVersion();
++        }
++
++        return migrationInfo.getScript();
++    }
+ }
+diff --git a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
+index 615223919..9bcffc49e 100644
+--- a/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
++++ b/flyway-core/src/main/java/org/flywaydb/core/internal/command/DbMigrate.java
+@@ -365,7 +365,6 @@ public class DbMigrate {
+                 isPreviousVersioned = false;
+             }
+ 
+-            if (skipExecutingMigrations) {
+                 LOG.debug("Skipping execution of migration of " + migrationText);
+                 progress.log("Skipping migration of " + migration.getScript());
+             } else {
+@@ -382,57 +381,79 @@ public class DbMigrate {
+                         LOG.info("Migrating " + migrationText);
+                         progress.log("Migrating " + migration.getScript());
+ 
++                        // With single connection databases we need to manually disable the transaction for the
+                         // With single connection databases we need to manually disable the transaction for the
+                         // migration as it is turned on for schema history changes
+                         boolean oldAutoCommit = context.getConnection().getAutoCommit();
+                         if (database.useSingleConnection() && !isExecuteInTransaction) {
+                             context.getConnection().setAutoCommit(true);
+                         }
+-                        migration.getResolvedMigration().getExecutor().execute(context);
++                        executeMigrationWithRetries(migration, context);
+                         if (database.useSingleConnection() && !isExecuteInTransaction) {
+                             context.getConnection().setAutoCommit(oldAutoCommit);
+-                        }
++            migrationText = "schema " + schema + " to version " + doQuote(migration.getVersion()
++                                                                                  + (StringUtils.hasLength(migration.getDescription()) ? " - " + migration.getDescription() : ""))
++                    + (isOutOfOrder ? " [out of order]" : "")
++                    + (canExecuteInTransaction ? "" : " [non-transactional]");
++        } else {
++            migrationText = "schema " + schema + " with repeatable migration " + doQuote(migration.getDescription())
++                    + (canExecuteInTransaction ? "" : " [non-transactional]");
++        }
++        return migrationText;
++    }
+ 
+-                        appliedResolvedMigrations.add(migration.getResolvedMigration());
+-                    } catch (FlywayException e) {
+-                        callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+-                    } catch (SQLException e) {
+-                        callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+-                        throw new FlywayMigrateException(migration, isOutOfOrder, e, migration.canExecuteInTransaction(), migrateResult);
+-                    }
++    private void executeMigrationWithRetries(MigrationInfoImpl migration, Context context) throws SQLException {
++        int retryCount = 0;
+ 
+-                    LOG.debug("Successfully completed migration of " + migrationText);
+-                    progress.log("Successfully completed migration of " + migration.getScript());
+-                    callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE);
+-                } finally {
+-                    callbackExecutor.setMigrationInfo(null);
++        while (true) {
++            try {
++                migration.getResolvedMigration().getExecutor().execute(context);
++                migrateResult.recordRetryCount(migration, retryCount);
++                return;
++            } catch (SQLException e) {
++                if (!shouldRetryMigration(migration, e, retryCount)) {
++                    migrateResult.recordRetryCount(migration, retryCount);
++                    throw e;
+                 }
++
++                retryCount++;
++                sleepBeforeRetry(migration, e);
+             }
++        }
++    }
+ 
+-            stopWatch.stop();
+-            int executionTime = (int) stopWatch.getTotalTimeMillis();
++    private boolean shouldRetryMigration(MigrationInfoImpl migration, SQLException exception, int retryCount) {
++        return retryCount < 2 && "40001".equals(exception.getSQLState()) && isOddVersionedMigration(migration);
++    }
++
++    private boolean isOddVersionedMigration(MigrationInfoImpl migration) {
++        if (!migration.isVersioned() || migration.getVersion() == null) {
++            return false;
++        }
+ 
+-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
+-            migrateResult.putSuccessfulMigration(migration, executionTime);
++        String version = migration.getVersion().getVersion();
++        if (!StringUtils.hasLength(version)) {
++            return false;
++        }
+ 
+-            schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
+-                                              migration.getScript(), migration.getResolvedMigration().getChecksum(), executionTime, true);
++        String[] versionParts = version.split("\\.");
++        String lastPart = versionParts[versionParts.length - 1];
++        if (!lastPart.chars().allMatch(Character::isDigit)) {
++            return false;
+         }
++
++        return (lastPart.charAt(lastPart.length() - 1) - '0') % 2 != 0;
+     }
+ 
+-    private String toMigrationText(MigrationInfo migration, boolean canExecuteInTransaction, boolean isOutOfOrder) {
+-        final String migrationText;
+-        if (migration.getVersion() != null) {
+-            migrationText = "schema " + schema + " to version " + doQuote(migration.getVersion()
+-                                                                                  + (StringUtils.hasLength(migration.getDescription()) ? " - " + migration.getDescription() : ""))
+-                    + (isOutOfOrder ? " [out of order]" : "")
+-                    + (canExecuteInTransaction ? "" : " [non-transactional]");
+-        } else {
+-            migrationText = "schema " + schema + " with repeatable migration " + doQuote(migration.getDescription())
+-                    + (canExecuteInTransaction ? "" : " [non-transactional]");
++    private void sleepBeforeRetry(MigrationInfoImpl migration, SQLException exception) throws SQLException {
++        try {
++            Thread.sleep(1000L);
++        } catch (InterruptedException interruptedException) {
++            Thread.currentThread().interrupt();
++            SQLException interruptedSqlException = new SQLException("Interrupted while retrying migration " + migration.getScript(), exception.getSQLState(), interruptedException);
++            interruptedSqlException.setNextException(exception);
++            throw interruptedSqlException;
+         }
+-        return migrationText;
+     }
+ 
+     private String doQuote(String text) {

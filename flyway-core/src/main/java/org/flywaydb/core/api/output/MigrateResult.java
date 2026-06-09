@@ -42,6 +42,7 @@ public class MigrateResult extends HtmlResult {
     public String database;
     public List<String> warnings = new ArrayList<>();
     public String databaseType;
+    public Map<String, Integer> retryCounts = new HashMap<>();
 
     private transient Map<MigrationKey, MigrateOutput> pendingMigrations = new HashMap<>();
     private transient Map<MigrationKey, MigrateOutput> failedMigrations = new HashMap<>();
@@ -80,6 +81,7 @@ public class MigrateResult extends HtmlResult {
         this.targetSchemaVersion = migrateResult.targetSchemaVersion;
         this.warnings = migrateResult.warnings;
         this.databaseType = migrateResult.databaseType;
+        this.retryCounts = migrateResult.retryCounts;
     }
 
     public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
@@ -99,6 +101,14 @@ public class MigrateResult extends HtmlResult {
         final var key = new MigrationKey(migrationInfo);
         failedMigrations.put(key, CommandResultFactory.createMigrateOutput(migrationInfo, executionTime));
         pendingMigrations.remove(key);
+    }
+
+    public void recordRetryCount(final MigrationInfo migrationInfo, final int retryCount) {
+        if (retryCount <= 0) {
+            return;
+        }
+
+        retryCounts.put(createRetryCountKey(migrationInfo), retryCount);
     }
 
     public List<MigrateOutput> getPendingMigrations() {
@@ -145,5 +155,13 @@ public class MigrateResult extends HtmlResult {
                 successfulMigrations.get(key).rolledBack = true;
             }
         }
+    }
+
+    private String createRetryCountKey(final MigrationInfo migrationInfo) {
+        if (migrationInfo.isVersioned()) {
+            return migrationInfo.getVersion().getVersion();
+        }
+
+        return migrationInfo.getScript();
     }
 }
