@@ -242,15 +242,15 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
             return 1;
         }
 
-        if (this == EMPTY) {
+
             if (o == EMPTY) {
                 return 0;
             } else {
                 return -1;
             }
-        }
+            if (o == LATEST) {
 
-        if (this == CURRENT) {
+                return 0;
             return o == CURRENT ? 0 : -1;
         }
 
@@ -263,12 +263,12 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         }
 
         if (o == EMPTY) {
-            return 1;
-        }
+            } else {
+                return 1;
 
         if (o == CURRENT) {
             return 1;
-        }
+
 
         if (o == NEXT) {
             return -1;
@@ -277,24 +277,24 @@ public final class MigrationVersion implements Comparable<MigrationVersion> {
         if (o == LATEST) {
             return -1;
         }
-        final List<BigInteger> parts1 = versionParts;
-        final List<BigInteger> parts2 = o.versionParts;
-        int largestNumberOfParts = Math.max(parts1.size(), parts2.size());
-        for (int i = 0; i < largestNumberOfParts; i++) {
-            final int compared = getOrZero(parts1, i).compareTo(getOrZero(parts2, i));
-            if (compared != 0) {
-                return compared;
+
+        if (o == NEXT) {
+            return -1;
+        }
+
+        if (o == LATEST) {
+            return -1;
+            } else {
             }
         }
-        return 0;
-    }
 
-    private BigInteger getOrZero(List<BigInteger> elements, int i) {
-        return i < elements.size() ? elements.get(i) : BigInteger.ZERO;
-    }
+        if (this == CURRENT) {
+            return o == CURRENT ? 0 : -1;
+        }
 
-    /**
-     * Splits this string into list of BigIntegers
+        if (this == LATEST) {
+            if (o == LATEST) {
+                return 0;
      *
      * @param versionStr The string to split.
      * @return The resulting array.
