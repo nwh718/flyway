@@ -1,0 +1,40 @@
+diff --git a/flyway-plugins/flyway-gradle-plugin/pom.xml b/flyway-plugins/flyway-gradle-plugin/pom.xml
+index 81d011c18..648369c46 100644
+--- a/flyway-plugins/flyway-gradle-plugin/pom.xml
++++ b/flyway-plugins/flyway-gradle-plugin/pom.xml
+@@ -22,12 +22,6 @@
+       <version>${project.version}</version>
+     </dependency>
+ 
+-
+-
+-
+-
+-
+-
+     <dependency>
+       <groupId>org.gradle</groupId>
+       <artifactId>gradle-core</artifactId>
+@@ -138,20 +132,6 @@
+           </execution>
+         </executions>
+       </plugin>
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+     </plugins>
+   </build>
+-</project>
+\ No newline at end of file
++</project>
