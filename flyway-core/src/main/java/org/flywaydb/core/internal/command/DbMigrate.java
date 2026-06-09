@@ -365,6 +365,7 @@ public class DbMigrate {
                 isPreviousVersioned = false;
             }
 
+            int retries = 0;
             if (skipExecutingMigrations) {
                 LOG.debug("Skipping execution of migration of " + migrationText);
                 progress.log("Skipping migration of " + migration.getScript());
@@ -382,15 +383,47 @@ public class DbMigrate {
                         LOG.info("Migrating " + migrationText);
                         progress.log("Migrating " + migration.getScript());
 
-                        // With single connection databases we need to manually disable the transaction for the
-                        // migration as it is turned on for schema history changes
-                        boolean oldAutoCommit = context.getConnection().getAutoCommit();
-                        if (database.useSingleConnection() && !isExecuteInTransaction) {
-                            context.getConnection().setAutoCommit(true);
+                        final int maxRetries = 2;
+                        boolean executed = false;
+                        SQLException lastSqlException = null;
+                        while (true) {
+                            try {
+                                // With single connection databases we need to manually disable the transaction for
+                                // the migration as it is turned on for schema history changes
+                                boolean oldAutoCommit = context.getConnection().getAutoCommit();
+                                if (database.useSingleConnection() && !isExecuteInTransaction) {
+                                    context.getConnection().setAutoCommit(true);
+                                }
+                                migration.getResolvedMigration().getExecutor().execute(context);
+                                if (database.useSingleConnection() && !isExecuteInTransaction) {
+                                    context.getConnection().setAutoCommit(oldAutoCommit);
+                                }
+                                executed = true;
+                                break;
+                            } catch (SQLException e) {
+                                lastSqlException = e;
+                                if (retries < maxRetries && isOddLastVersionPart(migration.getVersion())
+                                        && "40001".equals(e.getSQLState())) {
+                                    retries++;
+                                    LOG.info("Migration of " + migrationText
+                                            + " failed with SQLState 40001 (lock timeout). Retrying ("
+                                            + retries + "/" + maxRetries + ")...");
+                                    try {
+                                        Thread.sleep(1000L);
+                                    } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                break;
+                            }
                         }
-                        migration.getResolvedMigration().getExecutor().execute(context);
-                        if (database.useSingleConnection() && !isExecuteInTransaction) {
-                            context.getConnection().setAutoCommit(oldAutoCommit);
+
+                        if (!executed) {
+                            callbackExecutor.onEachMigrateOrUndoEvent(Event.AFTER_EACH_MIGRATE_ERROR);
+                            throw new FlywayMigrateException(migration, isOutOfOrder, lastSqlException,
+                                                             migration.canExecuteInTransaction(), migrateResult);
                         }
 
                         appliedResolvedMigrations.add(migration.getResolvedMigration());
@@ -413,7 +446,7 @@ public class DbMigrate {
             stopWatch.stop();
             int executionTime = (int) stopWatch.getTotalTimeMillis();
 
-            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, null));
+            migrateResult.migrations.add(CommandResultFactory.createMigrateOutput(migration, executionTime, retries, null));
             migrateResult.putSuccessfulMigration(migration, executionTime);
 
             schemaHistory.addAppliedMigration(migration.getVersion(), migration.getDescription(), migration.getType(),
@@ -437,5 +470,22 @@ public class DbMigrate {
 
     private String doQuote(String text) {
         return "\"" + text + "\"";
+    }
+
+    private static boolean isOddLastVersionPart(MigrationVersion version) {
+        if (version == null || version.getVersion() == null) {
+            return false;
+        }
+        String versionStr = version.getVersion();
+        int lastDot = versionStr.lastIndexOf('.');
+        String lastPart = lastDot < 0 ? versionStr : versionStr.substring(lastDot + 1);
+        if (lastPart.isEmpty()) {
+            return false;
+        }
+        try {
+            return (Long.parseLong(lastPart) & 1) == 1;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 }

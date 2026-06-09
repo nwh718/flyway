@@ -113,16 +113,21 @@ public class CommandResultFactory {
     }
 
     public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime) {
-        return createMigrateOutput(migrationInfo, executionTime, false);
+        return createMigrateOutput(migrationInfo, executionTime, 0, false);
     }
 
     public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime, Boolean rolledBack) {
+        return createMigrateOutput(migrationInfo, executionTime, 0, rolledBack);
+    }
+
+    public static MigrateOutput createMigrateOutput(MigrationInfo migrationInfo, int executionTime, int retries, Boolean rolledBack) {
         return new MigrateOutput(getCategory(migrationInfo),
                                  migrationInfo.getVersion() != null ? migrationInfo.getVersion().getVersion() : "",
                                  migrationInfo.getDescription(),
                                  migrationInfo.getType() != null ? migrationInfo.getType().toString() : "",
                                  migrationInfo.getPhysicalLocation() != null ? migrationInfo.getPhysicalLocation() : "",
                                  executionTime,
+                                 retries,
                                  rolledBack);
     }
 
