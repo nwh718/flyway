@@ -42,6 +42,7 @@ public class MigrateResult extends HtmlResult {
     public String database;
     public List<String> warnings = new ArrayList<>();
     public String databaseType;
+    public int totalRetryCount;
 
     private transient Map<MigrationKey, MigrateOutput> pendingMigrations = new HashMap<>();
     private transient Map<MigrationKey, MigrateOutput> failedMigrations = new HashMap<>();
@@ -80,14 +81,16 @@ public class MigrateResult extends HtmlResult {
         this.targetSchemaVersion = migrateResult.targetSchemaVersion;
         this.warnings = migrateResult.warnings;
         this.databaseType = migrateResult.databaseType;
+        this.totalRetryCount = migrateResult.totalRetryCount;
     }
 
-    public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime) {
+    public void putSuccessfulMigration(final MigrationInfo migrationInfo, final int executionTime, final int retryCount) {
         final var key = new MigrationKey(migrationInfo);
         final var migrateOutput = CommandResultFactory.createMigrateOutput(migrationInfo, executionTime);
-
+        migrateOutput.retryCount = retryCount;
         successfulMigrations.put(key, migrateOutput);
         pendingMigrations.remove(key);
+        totalRetryCount += retryCount;
     }
 
     public void putPendingMigration(final MigrationInfo migrationInfo) {

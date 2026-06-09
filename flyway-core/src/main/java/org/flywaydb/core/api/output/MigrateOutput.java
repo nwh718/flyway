@@ -31,6 +31,6 @@ public class MigrateOutput {
     public String type;
     public String filepath;
     public int executionTime;
+    public int retryCount;
 
     public transient Boolean rolledBack;
-}
