@@ -1,0 +1,222 @@
+diff --git a/flyway-database/update-flyway-version.sh b/flyway-database/update-flyway-version.sh
+new file mode 100644
+index 000000000..b4a96fc26
+--- /dev/null
++++ b/flyway-database/update-flyway-version.sh
+@@ -0,0 +1,216 @@
++#!/usr/bin/env bash
++set -u
++set -o pipefail
++
++TARGET_VERSION="12.8.1"
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++ROOT_POM="$SCRIPT_DIR/pom.xml"
++MODULE_FILTER=""
++
++usage() {
++  cat <<'EOF'
++用法:
++  ./update-flyway-version.sh
++  ./update-flyway-version.sh -m flyway-database-postgresql
++  ./update-flyway-version.sh --module flyway-database-postgresql
++EOF
++}
++
++log_success() {
++  printf '[成功] %s\n' "$1"
++}
++
++log_skip() {
++  printf '[跳过] %s\n' "$1"
++}
++
++log_fail() {
++  printf '[失败] %s\n' "$1" >&2
++}
++
++require_command() {
++  if ! command -v "$1" >/dev/null 2>&1; then
++    log_fail "缺少依赖命令: $1"
++    exit 1
++  fi
++}
++
++read_modules() {
++  grep -oP '(?<=<module>)[^<]+' "$ROOT_POM"
++}
++
++extract_parent_version() {
++  perl -0ne 'if (m{<parent>.*?<artifactId>\s*flyway-parent\s*</artifactId>.*?<version>\s*([^<]+)\s*</version>.*?</parent>}s) { print $1; exit }' "$1"
++}
++
++extract_flyway_property() {
++  perl -0ne 'if (m{<flyway\.version>\s*([^<]+)\s*</flyway\.version>}s) { print $1; exit }' "$1"
++}
++
++update_flyway_property() {
++  local pom_file="$1"
++  TARGET_VERSION="$TARGET_VERSION" perl -0pi -e 's{(<flyway\.version>\s*)[^<]+(\s*</flyway\.version>)}{$1 . $ENV{TARGET_VERSION} . $2}gse' "$pom_file"
++}
++
++update_parent_version() {
++  local pom_file="$1"
++  TARGET_VERSION="$TARGET_VERSION" perl -0pi -e 's{(<parent>.*?<artifactId>\s*flyway-parent\s*</artifactId>.*?<version>\s*)[^<]+(\s*</version>.*?</parent>)}{$1 . $ENV{TARGET_VERSION} . $2}gse' "$pom_file"
++}
++
++backup_file() {
++  local pom_file="$1"
++  local backup_file="${pom_file}.bak.$(date +%Y%m%d%H%M%S)"
++
++  if cp "$pom_file" "$backup_file"; then
++    printf '%s' "$backup_file"
++    return 0
++  fi
++
++  return 1
++}
++
++process_module() {
++  local module="$1"
++  local pom_file="$SCRIPT_DIR/$module/pom.xml"
++  local backup_path=""
++  local current_version=""
++  local version_source=""
++
++  if [[ ! -f "$pom_file" ]]; then
++    log_fail "$module -> 未找到 pom.xml"
++    return 1
++  fi
++
++  if grep -q '<flyway\.version>' "$pom_file"; then
++    version_source="flyway.version"
++    current_version="$(extract_flyway_property "$pom_file")"
++  else
++    version_source="parent.version"
++    current_version="$(extract_parent_version "$pom_file")"
++  fi
++
++  if [[ -z "$current_version" ]]; then
++    log_fail "$module -> 未找到 <flyway.version> 或 flyway-parent 的 <version>"
++    return 1
++  fi
++
++  if [[ "$current_version" == "$TARGET_VERSION" ]]; then
++    log_skip "$module -> 已是 $TARGET_VERSION"
++    return 0
++  fi
++
++  if ! backup_path="$(backup_file "$pom_file")"; then
++    log_fail "$module -> 备份失败"
++    return 1
++  fi
++
++  if [[ "$version_source" == "flyway.version" ]]; then
++    if ! update_flyway_property "$pom_file"; then
++      cp "$backup_path" "$pom_file" >/dev/null 2>&1 || true
++      log_fail "$module -> 更新 <flyway.version> 失败，已尝试恢复备份"
++      return 1
++    fi
++  else
++    if ! update_parent_version "$pom_file"; then
++      cp "$backup_path" "$pom_file" >/dev/null 2>&1 || true
++      log_fail "$module -> 更新父级 <version> 失败，已尝试恢复备份"
++      return 1
++    fi
++  fi
++
++  if [[ "$version_source" == "flyway.version" ]]; then
++    current_version="$(extract_flyway_property "$pom_file")"
++  else
++    current_version="$(extract_parent_version "$pom_file")"
++  fi
++
++  if [[ "$current_version" != "$TARGET_VERSION" ]]; then
++    cp "$backup_path" "$pom_file" >/dev/null 2>&1 || true
++    log_fail "$module -> 修改校验失败，已尝试恢复备份"
++    return 1
++  fi
++
++  log_success "$module -> 已更新为 $TARGET_VERSION，备份: $backup_path"
++  return 0
++}
++
++while [[ $# -gt 0 ]]; do
++  case "$1" in
++    -m|--module)
++      if [[ $# -lt 2 || -z "$2" ]]; then
++        log_fail "参数 $1 需要指定模块名"
++        usage
++        exit 1
++      fi
++      MODULE_FILTER="$2"
++      shift 2
++      ;;
++    -h|--help)
++      usage
++      exit 0
++      ;;
++    *)
++      log_fail "不支持的参数: $1"
++      usage
++      exit 1
++      ;;
++  esac
++done
++
++if [[ ! -f "$ROOT_POM" ]]; then
++  log_fail "未找到根 pom.xml: $ROOT_POM"
++  exit 1
++fi
++
++require_command grep
++require_command perl
++require_command cp
++require_command date
++
++mapfile -t modules < <(read_modules)
++
++if [[ ${#modules[@]} -eq 0 ]]; then
++  log_fail "未从 $ROOT_POM 解析到任何子模块"
++  exit 1
++fi
++
++if [[ -n "$MODULE_FILTER" ]]; then
++  module_found="false"
++  for module in "${modules[@]}"; do
++    if [[ "$module" == "$MODULE_FILTER" ]]; then
++      module_found="true"
++      break
++    fi
++  done
++
++  if [[ "$module_found" != "true" ]]; then
++    log_fail "模块不存在或未在 flyway-database/pom.xml 中声明: $MODULE_FILTER"
++    exit 1
++  fi
++
++  modules=("$MODULE_FILTER")
++fi
++
++success_count=0
++skip_count=0
++fail_count=0
++
++for module in "${modules[@]}"; do
++  if output="$(process_module "$module" 2>&1)"; then
++    printf '%s\n' "$output"
++    if [[ "$output" == \[跳过\]* ]]; then
++      skip_count=$((skip_count + 1))
++    else
++      success_count=$((success_count + 1))
++    fi
++  else
++    printf '%s\n' "$output" >&2
++    fail_count=$((fail_count + 1))
++  fi
++done
++
++printf '汇总: 成功=%d，跳过=%d，失败=%d\n' "$success_count" "$skip_count" "$fail_count"
++
++if [[ $fail_count -gt 0 ]]; then
++  exit 1
++fi
