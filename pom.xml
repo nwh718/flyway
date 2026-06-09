@@ -146,7 +146,6 @@
     <version.gcs>2.60.0</version.gcs>
     <version.gcsm>2.81.0</version.gcsm>
     <version.gradle>6.1.1</version.gradle>
-    <version.gson>2.10.1</version.gson>
     <version.h2>2.3.232</version.h2>
     <version.hamcrest>2.2</version.hamcrest>
     <version.hsqldb>2.7.2</version.hsqldb>
