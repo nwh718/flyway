@@ -1,0 +1,61 @@
+diff --git a/flyway-plugins/flyway-gradle-plugin/pom.xml b/flyway-plugins/flyway-gradle-plugin/pom.xml
+--- a/flyway-plugins/flyway-gradle-plugin/pom.xml
++++ b/flyway-plugins/flyway-gradle-plugin/pom.xml
+@@ -15,10 +15,16 @@
+     <dependency>
+       <groupId>${project.groupId}</groupId>
+       <artifactId>flyway-core</artifactId>
+-      <version>${project.version}</version>
++      <version>${project.parent.version}</version>
+     </dependency>
+     <dependency>
+       <groupId>${project.groupId}</groupId>
+       <artifactId>flyway-database-oracle</artifactId>
+-      <version>${project.version}</version>
++      <version>${project.parent.version}</version>
++      <exclusions>
++        <exclusion>
++          <groupId>${project.groupId}</groupId>
++          <artifactId>flyway-core</artifactId>
++        </exclusion>
++      </exclusions>
+     </dependency>
+@@ -83,10 +89,4 @@
+     </dependency>
+     <dependency>
+-      <groupId>org.codehaus.groovy</groupId>
+-      <artifactId>groovy-all</artifactId>
+-      <version>2.4.7</version>
+-      <scope>provided</scope>
+-    </dependency>
+-    <dependency>
+       <groupId>org.projectlombok</groupId>
+       <artifactId>lombok</artifactId>
+     </dependency>
+@@ -139,4 +139,25 @@
+         </executions>
+       </plugin>
++      <plugin>
++        <artifactId>maven-enforcer-plugin</artifactId>
++        <executions>
++          <execution>
++            <id>ban-direct-groovy-all</id>
++            <goals>
++              <goal>enforce</goal>
++            </goals>
++            <configuration>
++              <rules>
++                <bannedDependencies>
++                  <searchTransitive>false</searchTransitive>
++                  <excludes>
++                    <exclude>org.codehaus.groovy:groovy-all</exclude>
++                  </excludes>
++                </bannedDependencies>
++              </rules>
++            </configuration>
++          </execution>
++        </executions>
++      </plugin>
+ 
+ 
+ 
